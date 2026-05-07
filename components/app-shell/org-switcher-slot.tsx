@@ -17,14 +17,16 @@ export function OrgSwitcherSlot() {
     <Button
       variant="outline"
       size="sm"
-      className="gap-2"
+      className="w-full justify-between gap-2 md:w-auto md:justify-start"
       // Disabled until auth-agent wires it; communicated visually + via aria.
       disabled
       aria-label="Organization switcher (not yet wired)"
     >
-      <Building2 className="size-4" aria-hidden="true" />
-      <span className="max-w-[12ch] truncate">No organization</span>
-      <ChevronDown className="size-4 opacity-60" aria-hidden="true" />
+      <span className="flex min-w-0 items-center gap-2">
+        <Building2 className="size-4 shrink-0" aria-hidden="true" />
+        <span className="truncate md:max-w-[14ch]">No organization</span>
+      </span>
+      <ChevronDown className="size-4 shrink-0 opacity-60" aria-hidden="true" />
     </Button>
   )
 }

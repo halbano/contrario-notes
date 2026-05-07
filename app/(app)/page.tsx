@@ -28,7 +28,7 @@ export default function AppHomePage() {
         title="No recent notes yet"
         description="Create your first note to start building your team's shared brain."
         action={
-          <Button disabled>
+          <Button variant="outline" disabled>
             <Plus className="size-4" aria-hidden="true" />
             New note
             <span className="sr-only"> (coming soon)</span>

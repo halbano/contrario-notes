@@ -55,7 +55,7 @@ Default = comfortable. No compact mode introduced in the shell.
 
 Single global rule in `styles/globals.css`:
 
-```
+```css
 :focus-visible { @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background; }
 ```
 
@@ -104,3 +104,81 @@ Exported from `@/components/states`:
 
 The home placeholder (`app/(app)/page.tsx`) consumes `EmptyState` to
 demonstrate the primitive end-to-end.
+
+## Visual iteration log
+
+Three Playwright-driven rounds (`scripts/screenshot.ts`, `npm run screenshot`).
+PNGs are written to `.screenshots/round-N/` (gitignored) and reviewed against
+`DESIGN_INVARIANTS.md` plus the https://www.contrario.ai/ reference.
+
+### Round 1 — 2026-05-07
+
+**Defects found:**
+- Mobile top bar overcrowded at 375 px: hamburger + logo + org switcher pill +
+  avatar all competed for space (`top-bar.tsx`).
+- Mobile nav drawer did not pin Settings to the bottom — `SideNav`'s `mt-auto`
+  was inert because `SheetContent` was not a flex column with full-height
+  children (`mobile-nav.tsx`).
+- Empty-state CTA used the default solid-dark `Button` while disabled, which
+  read as heavy and "clickable-but-broken" rather than "intentionally
+  disabled placeholder" (`app/(app)/page.tsx`).
+- Next.js dev-tools floating indicator overlapped the bottom-pinned Settings
+  link and polluted every screenshot.
+
+**Fixes applied:**
+- Removed mobile-only org switcher from the top bar; moved it into the mobile
+  nav drawer header (full-width inside the drawer, fixed-width on desktop).
+- Restructured `SheetContent` as `flex flex-col` with `SideNav` taking
+  `flex-1`, so secondary nav (`Settings`) genuinely sits at the drawer
+  bottom.
+- Switched the disabled "New note" CTA to `variant="outline"`, which reads as
+  a calmer placeholder consistent with the Contrario aesthetic.
+- Disabled both `devIndicators.appIsrStatus` and
+  `devIndicators.buildActivity` in `next.config.mjs`.
+
+**Status:** continued.
+
+### Round 2 — 2026-05-07
+
+**Defects found:**
+- The Next dev indicator was still rendering because the previous round's
+  config change required a server restart.
+
+**Fixes applied:**
+- Restarted the dev server with the updated `next.config.mjs`.
+
+**Status:** continued.
+
+### Round 3 — 2026-05-07
+
+**Defects found:** none material.
+
+**Notes:**
+- Top bar uncrowded at 375 px.
+- Mobile drawer correctly shows logo, org switcher, primary nav, then
+  Settings pinned at bottom; gear icon resolves correctly without the
+  dev-indicator overlay.
+- Auth screens are typographically led, restrained card with `shadow-sm`,
+  generous whitespace, single accent (the primary submit button).
+- Focus rings are visible on every interactive element (verified by
+  capturing the close button after opening the sheet — the ring is the
+  expected post-open focus state, not a static border).
+- The shadcn `Sheet` close button retains a subtle focus ring after open;
+  this is the correct accessibility behavior (focus moves to close on
+  open) and disappears on next interaction.
+
+**Status:** stabilized — three rounds, last round had no material defects.
+
+## Screenshot harness
+
+`scripts/screenshot.ts` (run via `npm run screenshot`) captures four surfaces
+× two viewports each (1280×800 desktop, 375×812 mobile, deviceScaleFactor 2)
+into `.screenshots/round-N/`:
+
+- `home` (authenticated home placeholder)
+- `sign-in`
+- `sign-up`
+- `home-mobile-nav-open` (mobile only — exercises the Sheet drawer)
+
+Pre-requisite: dev server already running on `:3000`. Round numbers
+auto-increment; pass `ROUND=N` to override.

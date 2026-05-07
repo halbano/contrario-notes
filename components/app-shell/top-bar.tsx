@@ -10,7 +10,8 @@ import { UserMenuSlot } from './user-menu-slot'
  *
  * Slots:
  * - logo (always visible)
- * - org switcher slot — wired by `auth-agent`
+ * - org switcher slot — wired by `auth-agent`. Hidden on mobile to keep the
+ *   bar uncrowded at 375 px (it lives inside the mobile nav drawer instead).
  * - user menu slot — wired by `auth-agent`
  *
  * Mobile: shows hamburger trigger that opens `MobileNav`.
@@ -20,20 +21,12 @@ export function TopBar() {
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/75 md:px-6">
       <MobileNav />
       <div className="flex flex-1 items-center gap-3">
-        <div className="hidden md:flex">
-          <Logo />
-        </div>
-        <div className="md:hidden">
-          <Logo />
-        </div>
+        <Logo />
         <div className="ml-2 hidden md:block">
           <OrgSwitcherSlot />
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <div className="md:hidden">
-          <OrgSwitcherSlot />
-        </div>
         <UserMenuSlot />
       </div>
     </header>
