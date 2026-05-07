@@ -89,9 +89,8 @@ export function SignInForm() {
         <div className="flex items-center justify-between">
           <Label htmlFor="password">Password</Label>
           <Link
-            href="/sign-in"
+            href="/forgot-password"
             className="text-small text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            aria-label="Forgot password (not yet available)"
           >
             Forgot?
           </Link>

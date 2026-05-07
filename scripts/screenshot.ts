@@ -37,6 +37,11 @@ const SURFACES: Surface[] = [
   { name: 'sign-in', path: '/sign-in', viewports: ['desktop', 'mobile'] },
   { name: 'sign-up', path: '/sign-up', viewports: ['desktop', 'mobile'] },
   {
+    name: 'forgot-password',
+    path: '/forgot-password',
+    viewports: ['desktop', 'mobile'],
+  },
+  {
     name: 'home-mobile-nav-open',
     path: '/',
     viewports: ['mobile'],

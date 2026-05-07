@@ -30,3 +30,18 @@ export async function signUpAction(_formData: FormData): Promise<AuthActionResul
     message: 'Sign-up is not yet wired. The auth-agent will enable this flow.',
   }
 }
+
+export async function requestPasswordReset(
+  _formData: FormData
+): Promise<AuthActionResult> {
+  // TODO(auth-agent): wire to Supabase `resetPasswordForEmail` (server-side).
+  // Validate with `forgotPasswordSchema` server-side first; return
+  // `fieldErrors` on validation failure. On success, return `{ ok: true }` so
+  // the UI shows the "Check your inbox" confirmation. Do NOT leak whether the
+  // email is registered — always respond with success once validation passes.
+  return {
+    ok: false,
+    message:
+      'Password reset is not yet wired. The auth-agent will enable this flow.',
+  }
+}

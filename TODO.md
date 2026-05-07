@@ -51,6 +51,7 @@ Risk: HIGH / MEDIUM / LOW.
 - [x] FE-05 | P1 | LOW | frontend | Mobile breakpoints + nav drawer
 - [x] FE-06 | P1 | LOW | frontend | Theme tokens, typography scale, focus styles
 - [x] FE-07 | P1 | LOW | frontend | Visual polish — Playwright screenshot iteration loop against Contrario aesthetic
+- [x] FE-08 | P1 | LOW | frontend | /forgot-password stub UI
 
 ## Phase 3 — Auth + Orgs (auth-agent)
 

@@ -81,11 +81,21 @@ the global rule wins through specificity / cascade.
 
 ## Auth screens
 
-- `app/(auth)/sign-in/page.tsx`, `app/(auth)/sign-up/page.tsx`.
+- `app/(auth)/sign-in/page.tsx`, `app/(auth)/sign-up/page.tsx`,
+  `app/(auth)/forgot-password/page.tsx`.
 - Use shared `AuthCard` and Zod schemas in `auth-schemas.ts`.
 - Server actions live in `auth-actions.ts` and currently return a clearly
   marked "not yet wired" message. The `auth-agent` replaces the bodies but
   must keep the input schemas and the result shape.
+
+The `/forgot-password` route is a stub: it owns nothing more than UI plus the
+`forgotPasswordSchema` and a `requestPasswordReset` server-action stub
+(`TODO(auth-agent)`-marked) that the form does not yet call. On submit the
+form runs client-side Zod validation only and flips into a local
+"Check your inbox" success state — no server call, no Supabase wiring. The
+`auth-agent` must replace the action body with `resetPasswordForEmail`,
+swap the local success-flip for a real action call, and ensure the response
+does not leak whether the email is registered.
 
 ## shadcn primitives in use
 
