@@ -122,6 +122,78 @@ Note: tenant isolation scored 0.55 — pattern is in place + 7 isolation tests p
 
 ---
 
+## 2026-05-07 — Foundation architecture session
+
+### Delivered
+
+- Next.js 15.1.3 (App Router), TypeScript strict + `noUncheckedIndexedAccess`.
+- Tailwind + shadcn-style theme tokens (no shadcn CLI invoked — equivalent
+  tokens in `styles/globals.css` and `tailwind.config.ts`).
+- Drizzle schema for all 9 tables with composite indexes leading on `org_id`.
+  Migration `drizzle/0000_init.sql` generated and reproducible.
+- Supabase clients: `lib/supabase/{server,browser,admin}.ts` reading env vars
+  only.
+- `lib/build-request-context.ts` with 5 unit tests covering auth, missing
+  membership, requestedOrgId hint, immutability.
+- `repositories/{base-repository,notes-repository,orgs-repository}.ts` with
+  the `createRepositories(ctx, db?)` factory. Base helpers `scopedWhere` and
+  `withOrgId` are the only places `eq(orgId, ctx.orgId)` is composed.
+- `services/{notes-service,orgs-service,index.ts}` with
+  `createScopedServices(ctx, opts)` factory.
+- `permissions/note-permissions.ts` with role × visibility × action matrix.
+  37 unit tests cover every combination.
+- `logging/{events,logger,redact}.ts` — pino-style structured logger, full
+  event taxonomy from `agents/files-logging-agent.md`, recursive secret
+  redaction tested.
+- `tests/tenant-isolation.test.ts` — 7 tests on real Postgres (pglite WASM)
+  with the actual migrations applied. Asserts cross-org reads return null,
+  cross-org writes silently no-op, and foreign-`orgId` payloads are
+  rejected at the repo boundary.
+- Dockerfile (multi-stage, `output: standalone`) + `railway.toml`.
+- ESLint rule `no-restricted-imports` blocks `@/db` outside `repositories/`
+  and `db/` (defense in depth alongside review).
+
+### Decisions
+
+- ADR-0008 added: pglite for the tenant-isolation harness. Real Postgres
+  semantics, zero external dependencies, fast.
+- Logger location: `logging/` exports a pino-style sink-injectable logger.
+  `console.log` not used in product code. (No new ADR — covered by ADR-0003
+  binding "Logging: pino-style structured JSON".)
+- Privacy-holds-for-admins rule: even an org admin cannot read another
+  user's `private` note. Encoded in `note-permissions.ts` and tested.
+- 404-not-403 surface: `services.notes.update` and `.remove` throw
+  `AppError('not_found')` for both missing rows and forbidden rows.
+  `permission_denied` is reserved for the `create` path, where
+  non-existence is not the relevant signal.
+
+### Risks discovered
+
+- MEDIUM: `services.notes.listVisible` currently post-filters by
+  `canReadNote` after the SQL fetch. This is a STOPGAP for the foundation
+  slice; the search-ai-agent and notes-agent must move the visibility
+  predicate INTO SQL per ADR-0004 invariant 4 before any list/search UI
+  ships. Documented in code comment in `services/notes-service.ts`.
+- LOW: `db/migrate.ts` writes to stdout via `console.log` (one-shot
+  operational script). Justified — not product code path.
+- LOW: tenant-isolation tests take ~6s due to pglite WASM bootstrap. CI
+  acceptable; revisit if it grows.
+
+### Open questions for orchestrator
+
+1. RLS policies (defense-in-depth per ADR-0001) — not authored here. Should
+   foundation include `drizzle/0001_rls.sql` or is that owned by the auth
+   agent? Current branch ships migration 0000 only.
+2. The `note_shares` table for the `shared` visibility tier is not in the
+   foundation schema. Permissions assume the shared list is loaded
+   alongside the note (`sharedWithUserIds` field on `NoteForPermission`).
+   Notes-agent will need to add this table.
+3. Search FTS column (`tsvector` + GIN per ADR-0004) is intentionally NOT
+   in this migration — owned by search-ai-agent. Schema is stable enough
+   for them to add it without a foundation rework.
+
+---
+
 ## Risk register (live)
 
 | Level | Description | Owner | Status |
