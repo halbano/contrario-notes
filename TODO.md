@@ -92,10 +92,10 @@ Risk: HIGH / MEDIUM / LOW.
 
 ## Phase 8 — CI / quality (ci-quality-agent)
 
-- [ ] CI-01 | P0 | LOW | ci-quality | GitHub Actions: lint + typecheck + test + build on PR + main
-- [ ] CI-02 | P1 | MEDIUM | ci-quality | Tenant-isolation test job (must pass to merge)
-- [ ] CI-03 | P2 | LOW | ci-quality | Optional: Docker build validation
-- [ ] CI-04 | P2 | LOW | ci-quality | Optional: migration validation
+- [x] CI-01 | P0 | LOW | ci-quality | GitHub Actions: lint + typecheck + test + build on PR + main
+- [x] CI-02 | P1 | MEDIUM | ci-quality | Tenant-isolation test job (must pass to merge) — included in `test` job (covers `tests/tenant-isolation.test.ts` via pglite)
+- [x] CI-03 | P2 | LOW | ci-quality | Optional: Docker build validation (`docker-build` job, no push)
+- [ ] CI-04 | P2 | LOW | ci-quality | Optional: migration validation — deferred (requires ephemeral Postgres + secrets handling, out of scope for this slice)
 
 ## Phase 9 — Review (review-agent, continuous)
 

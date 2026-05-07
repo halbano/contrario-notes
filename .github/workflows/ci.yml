@@ -1,0 +1,201 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Cancel in-progress runs for the same ref to save minutes; keep main runs.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  NEXT_TELEMETRY_DISABLED: '1'
+  # Vitest needs a bit more headroom for the pglite tenant-isolation suite.
+  NODE_OPTIONS: '--max-old-space-size=4096'
+
+jobs:
+  install:
+    name: install (cache deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      cache-hit: ${{ steps.cache-node-modules.outputs.cache-hit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node_modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci --no-audit --no-fund
+
+  lint:
+    name: lint
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node_modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies (cache miss)
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci --no-audit --no-fund
+
+      - name: ESLint
+        run: npm run lint
+
+  typecheck:
+    name: typecheck
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node_modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies (cache miss)
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci --no-audit --no-fund
+
+      - name: TypeScript --noEmit
+        run: npm run typecheck
+
+  test:
+    name: test
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node_modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies (cache miss)
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci --no-audit --no-fund
+
+      - name: Vitest (unit + tenant-isolation pglite suite)
+        run: npm run test -- --reporter=verbose
+
+  build:
+    name: build
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node_modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies (cache miss)
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci --no-audit --no-fund
+
+      # Cache Next.js build output (.next/cache) for faster incremental builds.
+      # Key includes lockfile + source hashes so changes invalidate the cache.
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx') }}
+          restore-keys: |
+            next-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('package-lock.json') }}-
+
+      - name: Next.js build
+        run: npm run build
+
+  # Optional: docker image builds against the foundation Dockerfile.
+  # Validates that the production image still assembles cleanly.
+  # Does NOT push and does NOT run the resulting container.
+  docker-build:
+    name: docker-build (optional)
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: hashFiles('Dockerfile') != ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: false
+          tags: contrario-notes:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
