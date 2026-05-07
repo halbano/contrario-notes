@@ -43,6 +43,48 @@ Build the frontend shell and shared UI primitives. Establish the visual language
 7. Sign-in and sign-up screens implemented as UI only (form structure, validation surface). Action wiring is left as a clearly-marked TODO for auth-agent.
 8. shadcn primitives used wherever applicable. No custom alternatives.
 
+## Visual iteration loop (screenshot + refine)
+
+After implementing the shell, sign-in, sign-up surfaces, the agent runs a Playwright-driven visual review loop until the result matches `DESIGN_INVARIANTS.md` and the https://www.contrario.ai/ aesthetic.
+
+Setup (one-time):
+
+- Install dev dep: `npm i -D @playwright/test`
+- Install browsers: `npx playwright install chromium`
+- Add `.screenshots/` to `.gitignore`
+- Add `npm run screenshot` script that boots Next dev server (or assumes one is running on `:3000`) and runs `scripts/screenshot.ts`.
+
+`scripts/screenshot.ts` captures, at minimum:
+
+| Surface | Viewports |
+|---|---|
+| `/` (authenticated home placeholder) | 1280×800, 375×812 |
+| `/(auth)/sign-in` | 1280×800, 375×812 |
+| `/(auth)/sign-up` | 1280×800, 375×812 |
+| App shell with nav drawer open | 375×812 |
+
+Captures both light and dark theme if dark is implemented.
+
+PNGs save to `.screenshots/<surface>-<viewport>-<theme>.png` (timestamped folder optional). The directory is gitignored.
+
+Iteration loop (repeat until polished, max 3-4 rounds or until acceptance criteria met):
+
+1. Run screenshots.
+2. Read each PNG via the Read tool.
+3. Review against `DESIGN_INVARIANTS.md` (typography hierarchy, restrained color, spacing scale, focus visible, mobile layout, calm UI) and Contrario reference (typography-first, generous whitespace, subtle borders, no clutter).
+4. Note specific defects (e.g., "header padding too tight on mobile", "focus ring missing on input", "typography scale collapses at 375px").
+5. Edit components/styles to fix.
+6. Re-screenshot. Compare. Repeat.
+7. Stop when no defects remain or you've stabilized.
+
+Document each round in `docs/DESIGN_NOTES.md` under a "Visual iteration log" section: round number, defects found, fixes applied, before/after notes.
+
+Forbidden during iteration:
+
+- Editing files outside this agent's declared scope.
+- Adding decorative animation to "make it pop".
+- Inflating dependencies — Playwright is the only addition justified for screenshots; no design tooling.
+
 ## TDD expectations
 
 UI components: tests not required by TDD-strict rule, but include component-level tests for any non-trivial logic (e.g., responsive nav state machine).
