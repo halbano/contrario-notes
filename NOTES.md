@@ -194,6 +194,82 @@ Note: tenant isolation scored 0.55 — pattern is in place + 7 isolation tests p
 
 ---
 
+## 2026-05-07 — ci-quality-agent landed (local)
+
+Branch: `feat/ci-quality` — rebased onto `feat/foundation-architecture`. All four foundation scripts pass locally (lint, typecheck, test 71/71, build).
+
+### Workflow structure (`.github/workflows/ci.yml`)
+
+- **Triggers**: `pull_request` (any base branch) + `push` to `main`.
+- **Concurrency**: cancels in-flight runs for non-main refs; main runs always complete.
+- **Permissions**: `contents: read` only (least privilege).
+- **Node**: 22 (matches Dockerfile base image).
+- **Env**: `NODE_OPTIONS=--max-old-space-size=4096` so the pglite tenant-isolation suite has memory headroom on the runner.
+
+### Job graph
+
+```text
+install (cache deps)
+  ├─ lint       → npm run lint
+  ├─ typecheck  → npm run typecheck
+  ├─ test       → npm run test -- --reporter=verbose   # includes tenant-isolation pglite suite
+  ├─ build      → npm run build                        # restores .next/cache
+  └─ docker-build (optional, runs only if Dockerfile present)
+```
+
+The four primary jobs depend on `install` only — they run in parallel after the dependency cache is warm.
+
+### Cache strategy
+
+| Cache | Path | Key | Purpose |
+|---|---|---|---|
+| npm registry | (managed by `actions/setup-node@v4` with `cache: npm`) | `package-lock.json` hash | Fast `npm ci` on cache miss. |
+| `node_modules` | `node_modules` | `node_modules-${runner.os}-node22-${hash(package-lock.json)}` | Skip `npm ci` when lockfile unchanged. |
+| Next.js build | `.next/cache` | `next-${runner.os}-node22-${hash(package-lock.json)}-${hash(**/*.{ts,tsx,js,jsx})}` with lockfile-only restore-keys fallback | Faster incremental builds; restore-key falls back to last build with same lockfile when source changes. |
+| Docker layers | GHA cache (`type=gha`) | Buildx-managed | Faster image rebuilds. |
+
+Hit/miss expectations:
+
+- First PR / lockfile change: full miss on all caches; ~2–3 min install, full build.
+- Same-branch follow-up commits: `node_modules` HIT; Next cache HIT-or-restore (source change → restore-key fallback rebuilds incrementally).
+- Cache key changes deterministically with `package-lock.json` so type/lint regressions cannot be hidden by a stale cache.
+
+### Required status checks (apply via GitHub UI / `gh api` once CI runs once on `main`)
+
+Repo admin must protect `main` with these required checks:
+
+- `lint`
+- `typecheck`
+- `test`
+- `build`
+
+Optional (do not require until proven stable):
+
+- `docker-build (optional)`
+
+CLI shortcut once CI has run at least once:
+
+```bash
+gh api -X PUT \
+  repos/:owner/:repo/branches/main/protection \
+  -f required_status_checks.strict=true \
+  -f 'required_status_checks.contexts[]=lint' \
+  -f 'required_status_checks.contexts[]=typecheck' \
+  -f 'required_status_checks.contexts[]=test' \
+  -f 'required_status_checks.contexts[]=build' \
+  -F enforce_admins=true \
+  -F required_pull_request_reviews.required_approving_review_count=1 \
+  -F restrictions=
+```
+
+### Risks / observations
+
+- pglite startup observed at ~4.5s in this worktree's local run — comfortable inside the 15-min `test` timeout. No flake observed across local invocations.
+- Next 15.1.3 has a published CVE (CVE-2025-66478) flagged on `npm install`. Tracked as a foundation upgrade decision, not a CI defect — left for foundation-agent / orchestrator to schedule.
+- No `BUGS.md` entries opened by ci-quality wiring; foundation scripts are clean.
+
+---
+
 ## Risk register (live)
 
 | Level | Description | Owner | Status |
