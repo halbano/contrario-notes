@@ -70,4 +70,4 @@ Manual steps:
 
 ## Pre-merge checklist
 
-See [PRE_MERGE_CHECKLIST.md](../PRE_MERGE_CHECKLIST.md). Confirm all relevant boxes ticked.
+See [PRE_MERGE_CHECKLIST.md](https://github.com/halbano/contrario-notes/blob/main/PRE_MERGE_CHECKLIST.md). Confirm all relevant boxes ticked.
