@@ -59,6 +59,18 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
       },
+      // Typography scale — single source of truth (DESIGN_INVARIANTS.md #12).
+      // Components reference these utilities; no ad-hoc `text-[NNpx]`.
+      fontSize: {
+        display: ['var(--font-size-display)', { lineHeight: 'var(--line-height-tight)', letterSpacing: '-0.02em' }],
+        h1: ['var(--font-size-h1)', { lineHeight: 'var(--line-height-tight)', letterSpacing: '-0.02em' }],
+        h2: ['var(--font-size-h2)', { lineHeight: 'var(--line-height-snug)', letterSpacing: '-0.01em' }],
+        h3: ['var(--font-size-h3)', { lineHeight: 'var(--line-height-snug)' }],
+        h4: ['var(--font-size-h4)', { lineHeight: 'var(--line-height-snug)' }],
+        body: ['var(--font-size-body)', { lineHeight: 'var(--line-height-normal)' }],
+        small: ['var(--font-size-small)', { lineHeight: 'var(--line-height-normal)' }],
+        micro: ['var(--font-size-micro)', { lineHeight: 'var(--line-height-normal)' }],
+      },
     },
   },
   plugins: [require('tailwindcss-animate')],
