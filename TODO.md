@@ -16,25 +16,31 @@ Risk: HIGH / MEDIUM / LOW.
 - [x] G-05 | P0 | LOW | orchestrator | Write PR_TEMPLATE.md
 - [x] G-06 | P0 | LOW | orchestrator | Write PROCESS.md
 - [x] G-07 | P0 | LOW | orchestrator | Write NOTES.md (initial)
-- [ ] G-08 | P0 | LOW | orchestrator | Write ADR-0001..0007
-- [ ] G-09 | P0 | LOW | orchestrator | Write 9 agent specs in `/agents`
-- [ ] G-10 | P0 | LOW | orchestrator | Wire `.github/pull_request_template.md`
-- [ ] G-11 | P0 | LOW | orchestrator | Create 7 worktrees + branches
+- [x] G-08 | P0 | LOW | orchestrator | Write ADR-0001..0007
+- [x] G-09 | P0 | LOW | orchestrator | Write 9 agent specs in `/agents`
+- [x] G-10 | P0 | LOW | orchestrator | Wire `.github/pull_request_template.md`
+- [x] G-11 | P0 | LOW | orchestrator | Create 7 worktrees + branches
 
-## Phase 1 — Foundation (foundation-architecture-agent)
+## Phase 1 — Foundation (foundation-architecture-agent) — landed local on `feat/foundation-architecture`
 
-- [ ] F-01 | P0 | HIGH | foundation | Scaffold Next.js app (App Router, TS strict)
-- [ ] F-02 | P0 | LOW | foundation | Tailwind + shadcn/ui init, theme tokens
-- [ ] F-03 | P0 | HIGH | foundation | Drizzle schema: `users`, `organizations`, `memberships`, `notes`, `note_versions`, `tags`, `note_tags`, `files`, `audit_log`
-- [ ] F-04 | P0 | HIGH | foundation | Supabase client (server + client variants), env config
-- [ ] F-05 | P0 | HIGH | foundation | `RequestContext` builder + auth helper (session → ctx)
-- [ ] F-06 | P0 | HIGH | foundation | `repositories/` base + scoped factory (TDD)
-- [ ] F-07 | P0 | HIGH | foundation | `services/` scoped factory `createScopedServices(ctx)` (TDD)
-- [ ] F-08 | P0 | HIGH | foundation | `permissions/` module + role matrix (TDD)
-- [ ] F-09 | P0 | MEDIUM | foundation | `logging/` central logger + event taxonomy
-- [ ] F-10 | P0 | MEDIUM | foundation | Tenant-isolation test harness in `tests/`
-- [ ] F-11 | P0 | LOW | foundation | Dockerfile + Railway config
-- [ ] F-12 | P0 | LOW | foundation | `.env.example`, `.gitignore`, baseline scripts
+- [x] F-01 | P0 | HIGH | foundation | Scaffold Next.js app (App Router, TS strict)
+- [x] F-02 | P0 | LOW | foundation | Tailwind + shadcn/ui init, theme tokens
+- [x] F-03 | P0 | HIGH | foundation | Drizzle schema (9 tables, all tenant-owned have `org_id`)
+- [x] F-04 | P0 | HIGH | foundation | Supabase clients (server / browser / admin), env config
+- [x] F-05 | P0 | HIGH | foundation | `RequestContext` builder + auth helper
+- [x] F-06 | P0 | HIGH | foundation | `repositories/` base + scoped factory (TDD)
+- [x] F-07 | P0 | HIGH | foundation | `services/` scoped factory `createScopedServices(ctx)` (TDD)
+- [x] F-08 | P0 | HIGH | foundation | `permissions/` role matrix (TDD, 37 tests)
+- [x] F-09 | P0 | MEDIUM | foundation | `logging/` central logger + event taxonomy + redaction
+- [x] F-10 | P0 | MEDIUM | foundation | Tenant-isolation test harness (pglite, 7 assertions)
+- [x] F-11 | P0 | LOW | foundation | Dockerfile + Railway config
+- [x] F-12 | P0 | LOW | foundation | `.env.example`, `.gitignore`, baseline scripts
+
+### Carry-over from foundation phase
+
+- [ ] F-FIX-01 | P0 | HIGH | notes-agent + search-ai-agent | Move `services.notes.listVisible` visibility predicate INTO SQL (per ADR-0004). Stopgap post-filter in `services/notes-service.ts:50-57` violates TENANCY_INVARIANTS invariant 4.
+- [ ] F-RLS-01 | P1 | MEDIUM | auth-agent | Author `drizzle/0001_rls.sql` (defense-in-depth per ADR-0001).
+- [ ] F-SHARE-01 | P1 | HIGH | notes-agent | Add `note_shares(note_id, user_id, can_edit)` table for `shared` visibility tier.
 
 ## Phase 2 — Frontend shell (frontend-builder-agent)
 
