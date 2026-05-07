@@ -205,6 +205,76 @@ Note: tenant isolation scored 0.55 — pattern is in place + 7 isolation tests p
 | MEDIUM | FTS performance at ~10k notes | search-ai-agent | open |
 | LOW | Migration ordering across worktrees | foundation-architecture-agent | open |
 
+---
+
+## 2026-05-07 — frontend-builder-agent landed (local)
+
+Branch: `feat/frontend-shell` (rebased onto `feat/foundation-architecture`).
+Lint, typecheck, build, and the 71 foundation tests all pass.
+
+### Acceptance criteria status
+
+1. App shell — done (`app/(app)/layout.tsx`, `components/app-shell/*`).
+2. State primitives — done; `EmptyState` consumed by home placeholder.
+3. Theme tokens — extended (typography scale only); foundation's tokens kept.
+4. Typography scale — defined once in `globals.css` + `tailwind.config.ts`.
+   See `docs/DESIGN_NOTES.md`.
+5. Focus visible — global `:focus-visible` + skip-link in root layout.
+6. Mobile (375 px) — verified for shell, mobile drawer, sign-in, sign-up
+   (visual review against Tailwind breakpoints; `Sheet` covers nav < md).
+7. Sign-in + sign-up — UI complete, server actions are stubs marked
+   `TODO(auth-agent)` in `app/(auth)/_components/auth-actions.ts`.
+8. shadcn primitives — `button input label sheet dropdown-menu avatar
+   separator card alert skeleton form` installed via the official CLI.
+
+### Visual decisions (recorded in `docs/DESIGN_NOTES.md`)
+
+- Typography: 8-step scale with named utilities `text-display`/`-h1..-h4`/
+  `-body`/`-small`/`-micro`. No ad-hoc font sizes anywhere.
+- Accent: kept restrained (single-accent rule). No bespoke brand color
+  introduced — uses the foundation's neutral `--accent` token.
+- Density: comfortable; no compact mode added.
+- Font: system stack via inline `--font-sans` (no network fetch, no
+  next/font dependency for the shell).
+
+### New risks / discoveries
+
+- LOW: shadcn-generated `components/ui/form.tsx` triggered the strict
+  type-import lint rule. Patched in place — future shadcn updates may
+  reintroduce. Documented for `ci-quality-agent`.
+- LOW: `'use server'` modules can only export async functions, so the auth
+  Zod schemas live in `auth-schemas.ts` (separate from `auth-actions.ts`).
+  `auth-agent` must keep this split.
+- INFO: org switcher and user menu are presentation-only stubs (disabled
+  controls with explicit aria labels). `auth-agent` must replace, not
+  extend, them — the slot files contain `TODO(auth-agent)` markers.
+
+### Files added (grouped)
+
+- App routes: `app/(app)/layout.tsx`, `app/(app)/page.tsx`,
+  `app/(auth)/layout.tsx`, `app/(auth)/sign-in/page.tsx`,
+  `app/(auth)/sign-up/page.tsx`,
+  `app/(auth)/_components/{auth-card,sign-in-form,sign-up-form,
+  auth-actions,auth-schemas}.{ts,tsx}`.
+- Shared UI: `components/brand/logo.tsx`,
+  `components/app-shell/{top-bar,side-nav,mobile-nav,
+  org-switcher-slot,user-menu-slot,nav-items,index}.{ts,tsx}`,
+  `components/states/{empty-state,loading-state,error-state,index}.{ts,tsx}`.
+- shadcn primitives: `components/ui/{button,input,label,sheet,
+  dropdown-menu,avatar,separator,card,alert,skeleton,form}.tsx`.
+- Tokens: `styles/globals.css` (typography vars, reduced-motion),
+  `tailwind.config.ts` (named font-size tokens), `components.json`
+  (shadcn config).
+- Docs: `docs/DESIGN_NOTES.md`.
+
+### Open questions (frontend-shell)
+
+1. Is the home route (`/`) intended to live inside `(app)` (auth-gated) or
+   should there be a public marketing landing? Current choice: auth-gated.
+2. The "Forgot password" link is a placeholder href to `/sign-in`. Should
+   the frontend stub a `forgot-password` route now or leave it for
+   `auth-agent`?
+
 ## Confidence score (live)
 
 | Area | Weight | Score (0-1) | Weighted |
