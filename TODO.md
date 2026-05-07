@@ -44,12 +44,14 @@ Risk: HIGH / MEDIUM / LOW.
 
 ## Phase 2 — Frontend shell (frontend-builder-agent)
 
-- [ ] FE-01 | P1 | LOW | frontend | App layout (top bar + side nav, Contrario aesthetic)
-- [ ] FE-02 | P1 | LOW | frontend | Org switcher component (data-driven, scoped)
-- [ ] FE-03 | P1 | LOW | frontend | Auth screens (sign-in / sign-up via Supabase)
-- [ ] FE-04 | P1 | LOW | frontend | Empty / loading / error state components
-- [ ] FE-05 | P1 | LOW | frontend | Mobile breakpoints + nav drawer
-- [ ] FE-06 | P1 | LOW | frontend | Theme tokens, typography scale, focus styles
+- [x] FE-01 | P1 | LOW | frontend | App layout (top bar + side nav, Contrario aesthetic)
+- [~] FE-02 | P1 | LOW | frontend | Org switcher component (data-driven, scoped) — **slot only** (presentation); auth-agent wires data
+- [x] FE-03 | P1 | LOW | frontend | Auth screens (sign-in / sign-up via Supabase) — **UI only** with TODO(auth-agent) action stubs
+- [x] FE-04 | P1 | LOW | frontend | Empty / loading / error state components
+- [x] FE-05 | P1 | LOW | frontend | Mobile breakpoints + nav drawer
+- [x] FE-06 | P1 | LOW | frontend | Theme tokens, typography scale, focus styles
+- [x] FE-07 | P1 | LOW | frontend | Visual polish — Playwright screenshot iteration loop against Contrario aesthetic
+- [x] FE-08 | P1 | LOW | frontend | /forgot-password stub UI
 
 ## Phase 3 — Auth + Orgs (auth-agent)
 

@@ -3,6 +3,11 @@ node_modules/
 .pnp
 .pnp.js
 
+# screenshots — used by visual iteration loop
+.screenshots/
+playwright-report/
+test-results/
+
 # testing
 coverage/
 
