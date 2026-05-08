@@ -12,7 +12,10 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx db/migrate.ts",
-    "screenshot": "tsx scripts/screenshot.ts"
+    "screenshot": "tsx scripts/screenshot.ts",
+    "check:nav": "tsx scripts/check-nav.ts",
+    "seed": "tsx scripts/seed/index.ts",
+    "seed:reset": "tsx scripts/seed/index.ts --reset"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
