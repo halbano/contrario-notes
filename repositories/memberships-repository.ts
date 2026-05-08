@@ -60,6 +60,19 @@ export type MembershipsRepository = {
   /** Update a membership's role inside the current org. Admin-only. */
   updateRole(membershipId: string, role: Role): Promise<DbMembership | null>
 
+  /**
+   * Find a membership in the current org by id. Used by the service layer
+   * to capture the `userId` before issuing a `remove` (so we can refresh
+   * the user's JWT claim after deletion — DR-PROD-01).
+   *
+   * Returns null if the membership doesn't exist in `ctx.orgId`.
+   *
+   * Optional on the interface (added late in the project lifecycle); when
+   * not provided, the service layer falls back to scanning
+   * `listForCurrentOrg()`.
+   */
+  findById?(membershipId: string): Promise<DbMembership | null>
+
   /** Remove a membership from the current org. Admin-only. */
   remove(membershipId: string): Promise<boolean>
 }
@@ -125,6 +138,20 @@ export function createMembershipsRepository(
           )!,
         )
         .returning()
+      return rows[0] ?? null
+    },
+
+    async findById(membershipId) {
+      const rows = await db
+        .select()
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.id, membershipId),
+            eq(memberships.orgId, ctx.orgId),
+          )!,
+        )
+        .limit(1)
       return rows[0] ?? null
     },
 

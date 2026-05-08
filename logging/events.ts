@@ -15,6 +15,8 @@ export const LOG_EVENTS = {
   AUTH_ORG_SWITCH_DENIED: 'auth.org_switch_denied',
   AUTH_ORG_CREATED: 'auth.org_created',
   AUTH_MEMBERSHIP_CHANGED: 'auth.membership_changed',
+  AUTH_JWT_SYNCED: 'auth.jwt_synced',
+  AUTH_JWT_SYNC_FAILED: 'auth.jwt_sync_failed',
 
   // notes
   NOTE_CREATED: 'note.created',
@@ -51,6 +53,8 @@ export const LEVEL_FOR_EVENT: Record<LogEvent, LogLevel> = {
   'auth.org_switch_denied': 'warn',
   'auth.org_created': 'info',
   'auth.membership_changed': 'info',
+  'auth.jwt_synced': 'info',
+  'auth.jwt_sync_failed': 'error',
   'note.created': 'info',
   'note.updated': 'info',
   'note.deleted': 'info',
