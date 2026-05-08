@@ -7,6 +7,11 @@ import { createOrgsService, type OrgsService } from './orgs-service'
 import { createFilesService, type FilesService } from './files-service'
 import type { FileStorage } from './files-storage'
 import { createSearchService, type SearchService } from './search-service'
+import {
+  createAiService,
+  type AiService,
+  type AiServiceDeps,
+} from './ai-service'
 
 export type ScopedServices = {
   ctx: RequestContext
@@ -15,6 +20,7 @@ export type ScopedServices = {
   files: FilesService
   audit: AuditWriter
   search: SearchService
+  ai: AiService
 }
 
 export type CreateScopedServicesOptions = {
@@ -28,6 +34,8 @@ export type CreateScopedServicesOptions = {
   fileStorage?: FileStorage
   /** Inject a custom audit writer (used by tests). */
   audit?: AuditWriter
+  /** AI dependency overrides — primarily for tests (mock LLM client). */
+  ai?: AiServiceDeps
 }
 
 /**
@@ -58,7 +66,8 @@ export function createScopedServices(
     }),
     audit,
     search: createSearchService(ctx, repos, log),
+    ai: createAiService(ctx, repos, log, opts.ai),
   }
 }
 
-export type { NotesService, OrgsService, FilesService, SearchService }
+export type { NotesService, OrgsService, FilesService, SearchService, AiService }

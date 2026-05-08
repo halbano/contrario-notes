@@ -47,6 +47,7 @@ function makeRepos(): Repositories {
       findById: vi.fn(),
       listRecent: vi.fn(),
       listVisible: vi.fn(),
+      findVisibleByIds: vi.fn(async () => []),
       create: vi.fn(),
       update: vi.fn(),
       softDelete: vi.fn(),

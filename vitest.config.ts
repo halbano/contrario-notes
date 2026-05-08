@@ -23,6 +23,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './'),
+      // Next.js provides a virtual `server-only` module to fence server-only
+      // imports out of the client bundle. Vitest doesn't ship that fence —
+      // alias to a no-op so test runners can load modules that import it.
+      'server-only': path.resolve(__dirname, './tests/helpers/server-only-shim.ts'),
     },
   },
 })

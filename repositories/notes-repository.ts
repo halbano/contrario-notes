@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { PgDatabase } from 'drizzle-orm/pg-core'
 import { notes, type DbNote, type DbNoteInsert } from '@/db/schema'
 import { visibleNotesPredicate } from '@/permissions/note-visibility-sql'
@@ -27,6 +27,13 @@ export type NotesRepository = {
    * embedded inside the fragment, so we do not also AND `scopedWhere` here.
    */
   listVisible(opts?: { limit?: number }): Promise<DbNote[]>
+  /**
+   * Resolve a list of note ids to the user-visible subset, ordered to
+   * match the input ids where possible (and silently dropping any id
+   * the caller cannot read). Used by the AI summary service (ADR-0006)
+   * to load context through the same predicate as user reads.
+   */
+  findVisibleByIds(ids: string[]): Promise<DbNote[]>
   create(input: CreateNoteInput): Promise<DbNote>
   update(id: string, patch: Partial<Omit<DbNoteInsert, 'id' | 'orgId'>>): Promise<DbNote | null>
   softDelete(id: string): Promise<boolean>
@@ -61,6 +68,24 @@ export function createNotesRepository(ctx: RequestContext, db: AnyDb): NotesRepo
         .where(and(visibleNotesPredicate(ctx), isNull(notes.deletedAt))!)
         .orderBy(desc(notes.updatedAt))
         .limit(limit)
+    },
+
+    async findVisibleByIds(ids) {
+      if (ids.length === 0) return []
+      // Defensive cap: callers that hand in pathological lists should not
+      // explode the IN-list. Keep aligned with the AI service's max input.
+      const capped = ids.slice(0, 50)
+      const rows = await db
+        .select()
+        .from(notes)
+        .where(
+          and(
+            visibleNotesPredicate(ctx),
+            isNull(notes.deletedAt),
+            inArray(notes.id, capped),
+          )!,
+        )
+      return rows
     },
 
     async create(input) {
