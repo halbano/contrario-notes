@@ -65,6 +65,37 @@ function makeRepos(initialNote: DbNote | null) {
       updateRole: vi.fn(async () => null),
       remove: vi.fn(async () => false),
     },
+    noteVersions: {
+      createVersion: vi.fn(async () => {
+        throw new Error('not used in unit tests')
+      }),
+      listForNote: vi.fn(async () => []),
+      findById: vi.fn(async () => null),
+      findPair: vi.fn(async () => null),
+    },
+    tags: {
+      listForOrg: vi.fn(async () => []),
+      listForNote: vi.fn(async () => []),
+      findOrCreateByName: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+      attachToNote: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+      detachFromNote: vi.fn(async () => false),
+      setTagsForNote: vi.fn(async () => []),
+    },
+    noteShares: {
+      listForNote: vi.fn(async () => []),
+      grant: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+      revoke: vi.fn(async () => false),
+      has: vi.fn(async () => false),
+    },
+    // The unit tests don't drive the transactional path; provide a stub
+    // that simply runs the callback against the same fake handle.
+    db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
   }
   return { repos, peek: () => store }
 }

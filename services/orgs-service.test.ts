@@ -64,6 +64,27 @@ function makeRepos(): Repositories {
       updateRole: vi.fn(async (id, role) => membership({ id, role })),
       remove: vi.fn(async () => true),
     },
+    noteVersions: {
+      createVersion: vi.fn(),
+      listForNote: vi.fn(async () => []),
+      findById: vi.fn(async () => null),
+      findPair: vi.fn(async () => null),
+    },
+    tags: {
+      listForOrg: vi.fn(async () => []),
+      listForNote: vi.fn(async () => []),
+      findOrCreateByName: vi.fn(),
+      attachToNote: vi.fn(),
+      detachFromNote: vi.fn(async () => false),
+      setTagsForNote: vi.fn(async () => []),
+    },
+    noteShares: {
+      listForNote: vi.fn(async () => []),
+      grant: vi.fn(),
+      revoke: vi.fn(async () => false),
+      has: vi.fn(async () => false),
+    },
+    db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
   }
 }
 
