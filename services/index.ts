@@ -6,6 +6,7 @@ import { createNotesService, type NotesService } from './notes-service'
 import { createOrgsService, type OrgsService } from './orgs-service'
 import { createFilesService, type FilesService } from './files-service'
 import type { FileStorage } from './files-storage'
+import { createSearchService, type SearchService } from './search-service'
 
 export type ScopedServices = {
   ctx: RequestContext
@@ -13,6 +14,7 @@ export type ScopedServices = {
   orgs: OrgsService
   files: FilesService
   audit: AuditWriter
+  search: SearchService
 }
 
 export type CreateScopedServicesOptions = {
@@ -55,7 +57,8 @@ export function createScopedServices(
       audit,
     }),
     audit,
+    search: createSearchService(ctx, repos, log),
   }
 }
 
-export type { NotesService, OrgsService, FilesService }
+export type { NotesService, OrgsService, FilesService, SearchService }

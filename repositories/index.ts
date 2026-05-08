@@ -19,6 +19,10 @@ import {
   createAuditLogRepository,
   type AuditLogRepository,
 } from './audit-log-repository'
+import {
+  createSearchRepository,
+  type SearchRepository,
+} from './search-repository'
 import type { RequestContext } from './types'
 
 export type Repositories = {
@@ -30,6 +34,7 @@ export type Repositories = {
   noteShares: NoteSharesRepository
   files: FilesRepository
   auditLog: AuditLogRepository
+  search: SearchRepository
   /** Underlying handle — services that need transactions reach into this. */
   db: AnyDb
 }
@@ -52,6 +57,7 @@ export function createRepositories(ctx: RequestContext, db?: AnyDb): Repositorie
     noteShares: createNoteSharesRepository(ctx, handle),
     files: createFilesRepository(ctx, handle),
     auditLog: createAuditLogRepository(ctx, handle),
+    search: createSearchRepository(ctx, handle),
     db: handle,
   }
 }
@@ -65,6 +71,7 @@ export type {
   NoteSharesRepository,
   FilesRepository,
   AuditLogRepository,
+  SearchRepository,
   AnyDb,
 }
 export { scopedWhere, withOrgId } from './base-repository'

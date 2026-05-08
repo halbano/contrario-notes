@@ -103,6 +103,9 @@ function makeRepos(): Repositories {
       record: vi.fn(async () => ({}) as never),
       listRecent: vi.fn(async () => []),
     },
+    search: {
+      searchVisible: vi.fn(async () => []),
+    },
     db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
   }
 }

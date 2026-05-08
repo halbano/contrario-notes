@@ -110,6 +110,9 @@ function makeRepos(initialNote: DbNote | null) {
       record: vi.fn(async () => ({}) as never),
       listRecent: vi.fn(async () => []),
     },
+    search: {
+      searchVisible: vi.fn(async () => []),
+    },
     // The unit tests don't drive the transactional path; provide a stub
     // that simply runs the callback against the same fake handle.
     db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
