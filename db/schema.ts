@@ -102,6 +102,35 @@ export const notes = pgTable(
   }),
 )
 
+/**
+ * Per-user share grants for notes whose `visibility = 'shared'`. The visibility
+ * predicate (see `permissions/note-visibility-sql.ts`) consults this table at
+ * SQL level — every grant is scoped to a single org, and the composite primary
+ * key prevents duplicates per (org, note, user). The leading composite index on
+ * `(org_id, user_id)` keeps "what shared notes can this user see?" lookups
+ * tenant-scoped.
+ */
+export const noteShares = pgTable(
+  'note_shares',
+  {
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    noteId: uuid('note_id')
+      .notNull()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    canEdit: boolean('can_edit').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.orgId, t.noteId, t.userId] }),
+    byUser: index('note_shares_org_user_idx').on(t.orgId, t.userId),
+  }),
+)
+
 export const noteVersions = pgTable(
   'note_versions',
   {
@@ -235,6 +264,8 @@ export type DbOrganization = typeof organizations.$inferSelect
 export type DbMembership = typeof memberships.$inferSelect
 export type DbNote = typeof notes.$inferSelect
 export type DbNoteInsert = typeof notes.$inferInsert
+export type DbNoteShare = typeof noteShares.$inferSelect
+export type DbNoteShareInsert = typeof noteShares.$inferInsert
 export type DbNoteVersion = typeof noteVersions.$inferSelect
 export type DbTag = typeof tags.$inferSelect
 export type DbNoteTag = typeof noteTags.$inferSelect
