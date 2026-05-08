@@ -103,8 +103,10 @@ Branch: `feat/foundation-architecture` — three commits, tree clean, **71/71 te
 | HIGH | Signed URL generation requires per-request permission check | files-logging-agent | open |
 | MEDIUM | Org switching cache invalidation | auth-agent | resolved (`switchOrgAction` calls `revalidatePath('/', 'layout')`) |
 | MEDIUM | FTS performance at ~10k notes | search-ai-agent | open |
+| MEDIUM | Next 15.1.3 CVE-2025-66478 flagged by npm audit; investigate + bump if needed | foundation/orchestrator | open |
 | LOW | Migration ordering across worktrees (foundation owns 0000, others propose deltas) | orchestrator | open |
 | LOW | RLS not yet implemented (defense-in-depth gap) | auth-agent | resolved (`drizzle/0001_rls.sql` + RLS isolation harness) |
+| LOW | CI-04 migrate validation deferred (needs Supabase test instance) | ci-quality-agent | deferred |
 
 ## Auth flow (auth-agent)
 
@@ -139,13 +141,31 @@ impersonate a non-owner role and verify zero-row + WITH CHECK rejection.
 |---|---|---|---|
 | Tenant isolation | 40 | 0.55 | 22.0 |
 | Permission enforcement | 20 | 0.55 | 11.0 |
-| Feature completeness | 20 | 0.05 | 1.0 |
-| Review discipline | 10 | 0.50 | 5.0 |
-| Observability | 10 | 0.50 | 5.0 |
+| Feature completeness | 20 | 0.20 | 4.0 |
+| Review discipline | 10 | 0.65 | 6.5 |
+| Observability | 10 | 0.55 | 5.5 |
 
-**Total: 44.0 / 100**. Up from 9.0 at bootstrap.
+**Total: 49.0 / 100**. Up from 44.0 (foundation only).
 
 Note: tenant isolation scored 0.55 — pattern is in place + 7 isolation tests pass, but the `listVisible` post-filter is a known violation pending the notes-agent fix. Will rise to ~0.85 after that fix lands.
+
+---
+
+## 2026-05-07 — Foundation, CI, Frontend PRs merged to main
+
+User merged: PR #2 (foundation), PR #3 (ci-quality), PR #4 (frontend-shell + visual polish + forgot-pw stub). Main now contains:
+
+- Full Next.js scaffold + Drizzle schema (9 tables) + Supabase clients + scoped repos/services + permissions + logger + tenant-isolation harness (foundation).
+- GitHub Actions CI: lint + typecheck + test + build + optional Docker (ci-quality).
+- App shell + sign-in / sign-up / forgot-password UI (stubs) + state primitives + Playwright screenshot harness (frontend).
+
+Open: PR #5 (chore template fix — broken `../PRE_MERGE_CHECKLIST.md` link in `.github/pull_request_template.md`; reviewers can't navigate from PR description). Bodies of #2-#4 already patched via REST API.
+
+### Process learnings
+
+- PR template's `../PRE_MERGE_CHECKLIST.md` doesn't render correctly in PR descriptions — `..` walks out of repo. Use absolute github.com URL going forward.
+- `gh pr view --json` and `gh pr edit` need `read:project` scope (newer gh requirement). REST `gh api -X PATCH repos/.../pulls/N` works without it. Document for agents.
+- Worktrees branched from b5b3f5c needed rebase onto origin/main after user pushed c7e8cec. NOTES.md / TODO.md merge conflicts trivial to resolve (HEAD always wins for orchestrator-side accounting).
 
 ---
 
