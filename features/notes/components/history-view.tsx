@@ -61,6 +61,10 @@ export function HistoryView({
     <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="space-y-2 rounded-lg border border-border bg-card p-3">
         <h2 className="text-h4 font-semibold tracking-tight">Versions</h2>
+        <p className="text-micro text-muted-foreground">
+          Pick A and B on different versions to see the diff. Selection is
+          shareable via the URL.
+        </p>
         <ul className="space-y-1">
           {sorted.map((v) => {
             const isA = v.id === selectedAId

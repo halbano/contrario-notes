@@ -160,7 +160,15 @@ export function NoteEditor({
       ) : null}
 
       <div className="space-y-2">
-        <Label htmlFor="title">Title</Label>
+        <div className="flex items-baseline justify-between">
+          <Label htmlFor="title">Title</Label>
+          <span
+            className="text-micro text-muted-foreground"
+            aria-live="polite"
+          >
+            {title.length}/200
+          </span>
+        </div>
         <Input
           id="title"
           name="title"
@@ -179,7 +187,15 @@ export function NoteEditor({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="content">Content</Label>
+        <div className="flex items-baseline justify-between">
+          <Label htmlFor="content">Content</Label>
+          <span
+            className="text-micro text-muted-foreground"
+            aria-live="polite"
+          >
+            {content.length.toLocaleString()}/50,000
+          </span>
+        </div>
         <textarea
           id="content"
           name="content"

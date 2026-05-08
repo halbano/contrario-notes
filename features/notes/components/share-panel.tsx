@@ -42,7 +42,6 @@ export function SharePanel({ noteId, shares, orgMembers }: SharePanelProps) {
   const [canEdit, setCanEdit] = React.useState(false)
 
   const sharedSet = new Set(shares.map((s) => s.userId))
-  const candidates = orgMembers.filter((m) => !sharedSet.has(m.userId))
 
   async function onShare(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -127,11 +126,19 @@ export function SharePanel({ noteId, shares, orgMembers }: SharePanelProps) {
             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <option value="">Select a member…</option>
-            {candidates.map((m) => (
-              <option key={m.userId} value={m.userId}>
-                {m.displayName ?? m.email}
-              </option>
-            ))}
+            {orgMembers.map((m) => {
+              const alreadyShared = sharedSet.has(m.userId)
+              const label = m.displayName ?? m.email
+              return (
+                <option
+                  key={m.userId}
+                  value={m.userId}
+                  disabled={alreadyShared}
+                >
+                  {alreadyShared ? `${label} (already shared)` : label}
+                </option>
+              )
+            })}
           </select>
         </div>
         <label className="flex items-center gap-2 text-small">

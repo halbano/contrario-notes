@@ -255,9 +255,13 @@ export function createNotesService(
         versionBId,
       )
       if (!pair) return null
+      // Diff library: `diff` (npm: jsdiff). Picked over diff-match-patch
+      // because it ships ESM, is line-oriented (matches our display), and
+      // has zero deps. https://github.com/kpdecker/jsdiff
       const titleParts = diffLines(pair.a.title + '\n', pair.b.title + '\n')
       const contentParts = diffLines(pair.a.content + '\n', pair.b.content + '\n')
-      // Tags aren't snapshot today — fall back to current attachments.
+      // Tags aren't snapshot in note_versions today — see issue #15.
+      // Fall back to current attachments; added/removed will report empty.
       const currentTags = await repos.tags.listForNote(noteId)
       const names = currentTags.map((t) => t.name).sort()
       return {
