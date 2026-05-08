@@ -1,6 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { makeTestDb, type TestDb } from './helpers/pglite-db'
 import { createScopedServices } from '@/services'
+import {
+  resetOrgsServiceJwtSyncForTests,
+  setOrgsServiceJwtSyncForTests,
+} from '@/services/orgs-service'
 import { createLogger } from '@/logging'
 import type { RequestContext } from '@/lib/request-context'
 import { memberships, organizations, users } from '@/db/schema'
@@ -42,6 +46,15 @@ const ctxBinY: RequestContext = Object.freeze({
 })
 
 beforeAll(async () => {
+  // DR-PROD-01: orgs-service mutations now call into syncUserOrgIds, which
+  // hits Supabase + getDb() at runtime. The auth-flow tests don't care
+  // about JWT-sync behavior (covered separately in jwt-sync.test.ts and
+  // tests/jwt-sync.test.ts), so we stub the helpers to no-ops.
+  setOrgsServiceJwtSyncForTests({
+    syncUserOrgIds: vi.fn(async () => ({ orgIds: [] })) as never,
+    signOutUserGlobally: vi.fn(async () => undefined) as never,
+  })
+
   const made = await makeTestDb()
   db = made.db
   close = made.close
@@ -64,6 +77,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  resetOrgsServiceJwtSyncForTests()
   await close()
 })
 
