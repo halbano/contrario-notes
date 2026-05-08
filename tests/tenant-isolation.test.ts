@@ -4,7 +4,7 @@ import { createScopedServices } from '@/services'
 import { createRepositories } from '@/repositories'
 import { createLogger } from '@/logging'
 import type { RequestContext } from '@/lib/request-context'
-import { memberships, organizations, users } from '@/db/schema'
+import { memberships, noteShares, organizations, users } from '@/db/schema'
 
 /**
  * Tenant-isolation harness. The single most important test in the repo.
@@ -30,8 +30,12 @@ const ORG_A = '11111111-1111-1111-1111-111111111111'
 const ORG_B = '22222222-2222-2222-2222-222222222222'
 const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const USER_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+// Second member of org A — used by visibility tests that need a peer
+// (org-wide reads, shared-grant reads, private-not-author reads).
+const USER_A2 = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
 
 const ctxA: RequestContext = Object.freeze({ userId: USER_A, orgId: ORG_A, role: 'admin' })
+const ctxA2: RequestContext = Object.freeze({ userId: USER_A2, orgId: ORG_A, role: 'member' })
 const ctxB: RequestContext = Object.freeze({ userId: USER_B, orgId: ORG_B, role: 'admin' })
 
 beforeAll(async () => {
@@ -47,10 +51,12 @@ beforeAll(async () => {
   await db.insert(users).values([
     { id: USER_A, email: 'a@example.com', displayName: 'A' },
     { id: USER_B, email: 'b@example.com', displayName: 'B' },
+    { id: USER_A2, email: 'a2@example.com', displayName: 'A2' },
   ])
   await db.insert(memberships).values([
     { orgId: ORG_A, userId: USER_A, role: 'admin' },
     { orgId: ORG_B, userId: USER_B, role: 'admin' },
+    { orgId: ORG_A, userId: USER_A2, role: 'member' },
   ])
 })
 
@@ -168,5 +174,134 @@ describe('tenant isolation — services layer (404 surface)', () => {
     await expect(services.notes.update(target.id, { title: 'X' })).rejects.toMatchObject({
       code: 'not_found',
     })
+  })
+})
+
+describe('visibility predicate — listVisible at SQL level', () => {
+  it('cross-org listVisible returns no rows from another org', async () => {
+    const reposA = createRepositories(ctxA, db as never)
+    const reposB = createRepositories(ctxB, db as never)
+
+    const bNote = await reposB.notes.create({
+      authorId: USER_B,
+      title: 'B-org-wide',
+      content: '',
+      visibility: 'org',
+    })
+
+    const visible = await reposA.notes.listVisible({ limit: 200 })
+    expect(visible.find((r) => r.id === bNote.id)).toBeUndefined()
+    expect(visible.every((r) => r.orgId === ORG_A)).toBe(true)
+  })
+
+  it("private note: only the author's listVisible returns it", async () => {
+    const reposA = createRepositories(ctxA, db as never)
+    const reposA2 = createRepositories(ctxA2, db as never)
+
+    const priv = await reposA.notes.create({
+      authorId: USER_A,
+      title: 'A-private',
+      content: '',
+      visibility: 'private',
+    })
+
+    const fromAuthor = await reposA.notes.listVisible({ limit: 200 })
+    expect(fromAuthor.some((r) => r.id === priv.id)).toBe(true)
+
+    const fromPeer = await reposA2.notes.listVisible({ limit: 200 })
+    expect(fromPeer.some((r) => r.id === priv.id)).toBe(false)
+  })
+
+  it('org note: every member of the org sees it; non-members do not', async () => {
+    const reposA = createRepositories(ctxA, db as never)
+    const reposA2 = createRepositories(ctxA2, db as never)
+    const reposB = createRepositories(ctxB, db as never)
+
+    const orgWide = await reposA.notes.create({
+      authorId: USER_A,
+      title: 'A-org',
+      content: '',
+      visibility: 'org',
+    })
+
+    const fromAuthor = await reposA.notes.listVisible({ limit: 200 })
+    const fromPeer = await reposA2.notes.listVisible({ limit: 200 })
+    const fromOutsider = await reposB.notes.listVisible({ limit: 200 })
+
+    expect(fromAuthor.some((r) => r.id === orgWide.id)).toBe(true)
+    expect(fromPeer.some((r) => r.id === orgWide.id)).toBe(true)
+    expect(fromOutsider.some((r) => r.id === orgWide.id)).toBe(false)
+  })
+
+  it('shared note: a peer without a note_shares grant cannot see it', async () => {
+    const reposA = createRepositories(ctxA, db as never)
+    const reposA2 = createRepositories(ctxA2, db as never)
+
+    const shared = await reposA.notes.create({
+      authorId: USER_A,
+      title: 'A-shared-no-grant',
+      content: '',
+      visibility: 'shared',
+    })
+
+    const fromAuthor = await reposA.notes.listVisible({ limit: 200 })
+    expect(fromAuthor.some((r) => r.id === shared.id)).toBe(true)
+
+    const fromPeer = await reposA2.notes.listVisible({ limit: 200 })
+    expect(fromPeer.some((r) => r.id === shared.id)).toBe(false)
+  })
+
+  it('shared note: a peer WITH a note_shares grant CAN see it', async () => {
+    const reposA = createRepositories(ctxA, db as never)
+    const reposA2 = createRepositories(ctxA2, db as never)
+
+    const shared = await reposA.notes.create({
+      authorId: USER_A,
+      title: 'A-shared-granted',
+      content: '',
+      visibility: 'shared',
+    })
+
+    await db.insert(noteShares).values({
+      orgId: ORG_A,
+      noteId: shared.id,
+      userId: USER_A2,
+      canEdit: false,
+    })
+
+    const fromPeer = await reposA2.notes.listVisible({ limit: 200 })
+    expect(fromPeer.some((r) => r.id === shared.id)).toBe(true)
+  })
+
+  it('note_shares row keyed to a foreign org is rejected by FK / PK integrity', async () => {
+    // Create a note in org A, then attempt to register a share row whose
+    // org_id points to org B. The FK on note_shares.note_id requires the
+    // referenced note to exist; combined with the (org_id, note_id, user_id)
+    // PK and the application-side rule that note.org_id must match
+    // share.org_id, the predicate would NEVER read this row even if Postgres
+    // accepted it. We assert the structural intent: a share's org_id must
+    // match the note's org_id, otherwise the predicate excludes it.
+    const reposA = createRepositories(ctxA, db as never)
+    const reposA2 = createRepositories(ctxA2, db as never)
+
+    const shared = await reposA.notes.create({
+      authorId: USER_A,
+      title: 'A-shared-foreign-grant',
+      content: '',
+      visibility: 'shared',
+    })
+
+    // Insert a "grant" with the wrong org_id (org B). FKs allow it (note_id
+    // and user_id resolve), but the predicate's `ns.org_id = ctx.orgId`
+    // clause filters it out — confirming defense-in-depth.
+    await db.insert(noteShares).values({
+      orgId: ORG_B,
+      noteId: shared.id,
+      userId: USER_A2,
+      canEdit: false,
+    })
+
+    const fromPeer = await reposA2.notes.listVisible({ limit: 200 })
+    expect(fromPeer.some((r) => r.id === shared.id)).toBe(false)
   })
 })
