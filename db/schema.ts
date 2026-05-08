@@ -109,6 +109,12 @@ export const notes = pgTable(
  * key prevents duplicates per (org, note, user). The leading composite index on
  * `(org_id, user_id)` keeps "what shared notes can this user see?" lookups
  * tenant-scoped.
+ *
+ * TODO(auth-agent): add an RLS migration for note_shares that mirrors the
+ * `notes` policy — allow rows where `org_id = auth_get_active_org()` and the
+ * row's `note.org_id` matches. The application layer enforces this today
+ * (every read goes through scopedWhere), but RLS is the second-fence
+ * defense-in-depth that other tables already enjoy via 0001_rls.sql.
  */
 export const noteShares = pgTable(
   'note_shares',
