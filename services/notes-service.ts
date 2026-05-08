@@ -45,15 +45,13 @@ export function createNotesService(
       return row
     },
 
-    /** List recent visible notes for the current user. */
+    /**
+     * List recent visible notes for the current user. Visibility is applied at
+     * SQL level via `visibleNotesPredicate` (see repositories/notes-repository
+     * #listVisible). No post-filter — ADR-0004 invariant 4.
+     */
     async listVisible(opts?: { limit?: number }): Promise<DbNote[]> {
-      const rows = await repos.notes.listRecent(opts)
-      // NOTE: this is a STOPGAP visibility filter. Search & list endpoints
-      // implemented later by notes/search agents must move this predicate
-      // INTO the SQL WHERE per ADR-0004 invariant 4.
-      // For the foundation slice we expose listVisible so other agents can
-      // wrap it with their proper SQL-level filters.
-      return rows.filter((r) => canReadNote(ctx, toPermissionView(r)))
+      return repos.notes.listVisible(opts)
     },
 
     async create(input: CreateNoteInput): Promise<DbNote> {

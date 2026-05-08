@@ -42,6 +42,7 @@ function makeRepos(): Repositories {
     notes: {
       findById: vi.fn(),
       listRecent: vi.fn(),
+      listVisible: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       softDelete: vi.fn(),
