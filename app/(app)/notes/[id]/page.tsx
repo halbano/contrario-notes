@@ -6,6 +6,8 @@ import { getRequestContext } from '@/lib/auth-context'
 import { createScopedServices } from '@/services'
 import { NoteEditor } from '@/features/notes/components/note-editor'
 import { SharePanel } from '@/features/notes/components/share-panel'
+import { FileAttachments } from '@/features/files/components/file-attachments'
+import { canAttachToNote } from '@/permissions/file-permissions'
 
 export default async function NoteDetailPage({
   params,
@@ -31,8 +33,15 @@ export default async function NoteDetailPage({
       ])
     : [[], []]
 
+  const attachedFiles = await services.files.listForNote(id)
+
   const isOwner = note.authorId === ctx.userId
   const canEdit = isOwner || ctx.role === 'admin'
+  const canWriteFiles = canAttachToNote(ctx, {
+    orgId: note.orgId,
+    authorId: note.authorId,
+    visibility: note.visibility,
+  })
 
   return (
     <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -85,6 +94,19 @@ export default async function NoteDetailPage({
             ) : null}
           </article>
         )}
+
+        <FileAttachments
+          noteId={id}
+          canWrite={canWriteFiles}
+          files={attachedFiles.map((f) => ({
+            id: f.id,
+            filename: f.filename,
+            mimeType: f.mimeType,
+            sizeBytes: f.sizeBytes,
+            uploaderId: f.uploaderId,
+            createdAt: f.createdAt.toISOString(),
+          }))}
+        />
       </div>
 
       {canShare ? (

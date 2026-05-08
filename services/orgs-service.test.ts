@@ -91,6 +91,18 @@ function makeRepos(): Repositories {
       revoke: vi.fn(async () => false),
       has: vi.fn(async () => false),
     },
+    files: {
+      findById: vi.fn(async () => null),
+      listByNote: vi.fn(async () => []),
+      listForOrg: vi.fn(async () => []),
+      create: vi.fn(),
+      hardDelete: vi.fn(async () => false),
+      softDelete: vi.fn(async () => false),
+    },
+    auditLog: {
+      record: vi.fn(async () => ({}) as never),
+      listRecent: vi.fn(async () => []),
+    },
     db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
   }
 }

@@ -2,6 +2,7 @@ import type { Repositories } from '@/repositories'
 import type { RequestContext, Role } from '@/lib/request-context'
 import type { Logger } from '@/logging'
 import { LOG_EVENTS } from '@/logging'
+import type { AuditWriter } from '@/logging/audit'
 import { AppError } from '@/lib/errors'
 import {
   canChangeMembershipRole,
@@ -55,7 +56,14 @@ export function createOrgsService(
   ctx: RequestContext,
   repos: Repositories,
   logger: Logger,
+  audit?: AuditWriter,
 ) {
+  async function recordAudit(
+    event: Parameters<NonNullable<typeof audit>>[0],
+    input: Parameters<NonNullable<typeof audit>>[1],
+  ) {
+    if (audit) await audit(event, input)
+  }
   return {
     /** The org the request is currently scoped to. */
     current: () => repos.orgs.current(),
@@ -86,6 +94,12 @@ export function createOrgsService(
       logger.log(LOG_EVENTS.AUTH_ORG_CREATED, {
         orgId: org.id,
         userId: ctx.userId,
+      })
+      await recordAudit(LOG_EVENTS.AUTH_ORG_CREATED, {
+        event: LOG_EVENTS.AUTH_ORG_CREATED,
+        entityType: 'organization',
+        entityId: org.id,
+        payload: { slug: org.slug, name: org.name },
       })
       // DR-PROD-01: refresh app_metadata.org_ids so RLS sees the new org.
       await jwtSyncImpl.syncUserOrgIds(ctx.userId, logger)
@@ -118,6 +132,12 @@ export function createOrgsService(
         targetUserId: input.userId,
         action: 'add',
         role: input.role,
+      })
+      await recordAudit(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+        event: LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED,
+        entityType: 'membership',
+        entityId: row.id,
+        payload: { action: 'add', targetUserId: input.userId, role: input.role },
       })
       // DR-PROD-01: the *added* user's claim must include this org so RLS
       // recognises them on their next request. We sync the target user, NOT
@@ -152,6 +172,12 @@ export function createOrgsService(
         action: 'change_role',
         role,
       })
+      await recordAudit(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+        event: LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED,
+        entityType: 'membership',
+        entityId: membershipId,
+        payload: { action: 'change_role', role },
+      })
       return row
     },
 
@@ -176,6 +202,12 @@ export function createOrgsService(
         orgId: ctx.orgId,
         userId: ctx.userId,
         targetOrgId,
+      })
+      await recordAudit(LOG_EVENTS.AUTH_ORG_SWITCH, {
+        event: LOG_EVENTS.AUTH_ORG_SWITCH,
+        entityType: 'organization',
+        entityId: targetOrgId,
+        payload: { fromOrgId: ctx.orgId, toOrgId: targetOrgId },
       })
       return { orgId: m.orgId, role: m.role as Role }
     },
@@ -208,6 +240,12 @@ export function createOrgsService(
         membershipId,
         targetUserId: target.userId,
         action: 'remove',
+      })
+      await recordAudit(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+        event: LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED,
+        entityType: 'membership',
+        entityId: membershipId,
+        payload: { action: 'remove' },
       })
       // DR-PROD-01: trim the claim AND invalidate any in-flight session so a
       // stale JWT (still encoding the old org_ids) is rejected on next use.

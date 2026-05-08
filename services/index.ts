@@ -1,13 +1,18 @@
 import type { RequestContext } from '@/lib/request-context'
 import { createRepositories, type AnyDb, type Repositories } from '@/repositories'
 import { logger as defaultLogger, type Logger } from '@/logging'
+import { createAuditWriter, type AuditWriter } from '@/logging/audit'
 import { createNotesService, type NotesService } from './notes-service'
 import { createOrgsService, type OrgsService } from './orgs-service'
+import { createFilesService, type FilesService } from './files-service'
+import type { FileStorage } from './files-storage'
 
 export type ScopedServices = {
   ctx: RequestContext
   notes: NotesService
   orgs: OrgsService
+  files: FilesService
+  audit: AuditWriter
 }
 
 export type CreateScopedServicesOptions = {
@@ -17,6 +22,10 @@ export type CreateScopedServicesOptions = {
   logger?: Logger
   /** Inject pre-built repositories (used by tests). */
   repositories?: Repositories
+  /** Inject a custom file-storage adapter (used by tests). */
+  fileStorage?: FileStorage
+  /** Inject a custom audit writer (used by tests). */
+  audit?: AuditWriter
 }
 
 /**
@@ -36,11 +45,17 @@ export function createScopedServices(
     role: ctx.role,
   })
   const repos = opts.repositories ?? createRepositories(ctx, opts.db)
+  const audit = opts.audit ?? createAuditWriter(log, repos.auditLog)
   return {
     ctx,
-    notes: createNotesService(ctx, repos, log),
-    orgs: createOrgsService(ctx, repos, log),
+    notes: createNotesService(ctx, repos, log, audit),
+    orgs: createOrgsService(ctx, repos, log, audit),
+    files: createFilesService(ctx, repos, log, {
+      storage: opts.fileStorage,
+      audit,
+    }),
+    audit,
   }
 }
 
-export type { NotesService, OrgsService }
+export type { NotesService, OrgsService, FilesService }
