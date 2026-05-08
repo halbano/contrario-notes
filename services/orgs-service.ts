@@ -2,6 +2,7 @@ import type { Repositories } from '@/repositories'
 import type { RequestContext, Role } from '@/lib/request-context'
 import type { Logger } from '@/logging'
 import { LOG_EVENTS } from '@/logging'
+import type { AuditWriter } from '@/logging/audit'
 import { AppError } from '@/lib/errors'
 import {
   canChangeMembershipRole,
@@ -26,7 +27,14 @@ export function createOrgsService(
   ctx: RequestContext,
   repos: Repositories,
   logger: Logger,
+  audit?: AuditWriter,
 ) {
+  async function recordAudit(
+    event: Parameters<NonNullable<typeof audit>>[0],
+    input: Parameters<NonNullable<typeof audit>>[1],
+  ) {
+    if (audit) await audit(event, input)
+  }
   return {
     /** The org the request is currently scoped to. */
     current: () => repos.orgs.current(),
@@ -58,6 +66,12 @@ export function createOrgsService(
         orgId: org.id,
         userId: ctx.userId,
       })
+      await recordAudit(LOG_EVENTS.AUTH_ORG_CREATED, {
+        event: LOG_EVENTS.AUTH_ORG_CREATED,
+        entityType: 'organization',
+        entityId: org.id,
+        payload: { slug: org.slug, name: org.name },
+      })
       return org
     },
 
@@ -88,6 +102,12 @@ export function createOrgsService(
         action: 'add',
         role: input.role,
       })
+      await recordAudit(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+        event: LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED,
+        entityType: 'membership',
+        entityId: row.id,
+        payload: { action: 'add', targetUserId: input.userId, role: input.role },
+      })
       return row
     },
 
@@ -109,6 +129,12 @@ export function createOrgsService(
         membershipId,
         action: 'change_role',
         role,
+      })
+      await recordAudit(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+        event: LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED,
+        entityType: 'membership',
+        entityId: membershipId,
+        payload: { action: 'change_role', role },
       })
       return row
     },
@@ -135,6 +161,12 @@ export function createOrgsService(
         userId: ctx.userId,
         targetOrgId,
       })
+      await recordAudit(LOG_EVENTS.AUTH_ORG_SWITCH, {
+        event: LOG_EVENTS.AUTH_ORG_SWITCH,
+        entityType: 'organization',
+        entityId: targetOrgId,
+        payload: { fromOrgId: ctx.orgId, toOrgId: targetOrgId },
+      })
       return { orgId: m.orgId, role: m.role as Role }
     },
 
@@ -155,6 +187,12 @@ export function createOrgsService(
         userId: ctx.userId,
         membershipId,
         action: 'remove',
+      })
+      await recordAudit(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+        event: LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED,
+        entityType: 'membership',
+        entityId: membershipId,
+        payload: { action: 'remove' },
       })
     },
   }

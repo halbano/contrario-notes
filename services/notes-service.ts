@@ -12,6 +12,7 @@ import type { CreateNoteInput } from '@/repositories/notes-repository'
 import type { RequestContext } from '@/lib/request-context'
 import type { DbNote, DbNoteVersion, DbNoteShare, DbTag } from '@/db/schema'
 import { LOG_EVENTS, type Logger } from '@/logging'
+import type { AuditWriter } from '@/logging/audit'
 import { diffLines } from 'diff'
 
 /** Minimum projection the permission layer needs from a note row. */
@@ -50,7 +51,15 @@ export function createNotesService(
   ctx: RequestContext,
   repos: Repositories,
   logger: Logger,
+  audit?: AuditWriter,
 ) {
+  /** Fire-and-forget helper that no-ops when no audit writer is wired. */
+  async function recordAudit(
+    event: Parameters<NonNullable<typeof audit>>[0],
+    input: Parameters<NonNullable<typeof audit>>[1],
+  ) {
+    if (audit) await audit(event, input)
+  }
   // Snapshot helper — runs inside whatever db handle is provided (tx or root).
   // We re-bind a versions repo against that handle so the version row writes
   // in the same transaction.
@@ -72,7 +81,21 @@ export function createNotesService(
       versionId: v.id,
       version: v.version,
     })
+    // NOTE: audit_log row is written by the caller AFTER the transaction
+    // commits — writing here would deadlock the pglite single-connection
+    // test fixture and is also wrong semantically (audit row would commit
+    // even if the wrapping tx rolled back).
     return v
+  }
+
+  async function recordVersionAudit(noteId: string, versionId: string, version: number) {
+    if (!audit) return
+    await audit(LOG_EVENTS.NOTE_VERSION_CREATED, {
+      event: LOG_EVENTS.NOTE_VERSION_CREATED,
+      entityType: 'note_version',
+      entityId: versionId,
+      payload: { noteId, version },
+    })
   }
 
   // Helper: only the note's author or an org admin may share / unshare.
@@ -122,6 +145,12 @@ export function createNotesService(
         userId: ctx.userId,
         noteId: row.id,
       })
+      await recordAudit(LOG_EVENTS.NOTE_CREATED, {
+        event: LOG_EVENTS.NOTE_CREATED,
+        entityType: 'note',
+        entityId: row.id,
+        payload: { visibility: row.visibility },
+      })
       return row
     },
 
@@ -139,21 +168,28 @@ export function createNotesService(
         })
         throw new AppError('permission_denied', 'You cannot create notes')
       }
-      const note = await repos.db.transaction(async (tx) => {
+      const result = await repos.db.transaction(async (tx) => {
         const txRepos = createRepositories(ctx, tx as never)
         const created = await txRepos.notes.create({
           ...input,
           authorId: ctx.userId,
         })
-        await snapshot(tx as never, created)
-        return created
+        const ver = await snapshot(tx as never, created)
+        return { note: created, version: ver }
       })
       logger.log(LOG_EVENTS.NOTE_CREATED, {
         orgId: ctx.orgId,
         userId: ctx.userId,
-        noteId: note.id,
+        noteId: result.note.id,
       })
-      return note
+      await recordAudit(LOG_EVENTS.NOTE_CREATED, {
+        event: LOG_EVENTS.NOTE_CREATED,
+        entityType: 'note',
+        entityId: result.note.id,
+        payload: { visibility: result.note.visibility, withVersion: true },
+      })
+      await recordVersionAudit(result.note.id, result.version.id, result.version.version)
+      return result.note
     },
 
     async update(
@@ -177,6 +213,12 @@ export function createNotesService(
         userId: ctx.userId,
         noteId: row.id,
       })
+      await recordAudit(LOG_EVENTS.NOTE_UPDATED, {
+        event: LOG_EVENTS.NOTE_UPDATED,
+        entityType: 'note',
+        entityId: row.id,
+        payload: { fields: Object.keys(patch) },
+      })
       return row
     },
 
@@ -198,20 +240,27 @@ export function createNotesService(
         })
         throw new AppError('not_found', 'Note not found')
       }
-      const updated = await repos.db.transaction(async (tx) => {
+      const result = await repos.db.transaction(async (tx) => {
         const txRepos = createRepositories(ctx, tx as never)
         const row = await txRepos.notes.update(id, patch)
         if (!row) return null
-        await snapshot(tx as never, row)
-        return row
+        const ver = await snapshot(tx as never, row)
+        return { note: row, version: ver }
       })
-      if (!updated) throw new AppError('not_found', 'Note not found')
+      if (!result) throw new AppError('not_found', 'Note not found')
       logger.log(LOG_EVENTS.NOTE_UPDATED, {
         orgId: ctx.orgId,
         userId: ctx.userId,
-        noteId: updated.id,
+        noteId: result.note.id,
       })
-      return updated
+      await recordAudit(LOG_EVENTS.NOTE_UPDATED, {
+        event: LOG_EVENTS.NOTE_UPDATED,
+        entityType: 'note',
+        entityId: result.note.id,
+        payload: { fields: Object.keys(patch), withVersion: true },
+      })
+      await recordVersionAudit(result.note.id, result.version.id, result.version.version)
+      return result.note
     },
 
     async remove(id: string): Promise<void> {
@@ -231,6 +280,12 @@ export function createNotesService(
         orgId: ctx.orgId,
         userId: ctx.userId,
         noteId: id,
+      })
+      await recordAudit(LOG_EVENTS.NOTE_DELETED, {
+        event: LOG_EVENTS.NOTE_DELETED,
+        entityType: 'note',
+        entityId: id,
+        payload: {},
       })
     },
 
@@ -390,6 +445,16 @@ export function createNotesService(
         targetUserId: input.userId,
         canEdit: input.canEdit,
       })
+      await recordAudit(LOG_EVENTS.NOTE_UPDATED, {
+        event: LOG_EVENTS.NOTE_UPDATED,
+        entityType: 'note',
+        entityId: input.noteId,
+        payload: {
+          action: 'share.grant',
+          targetUserId: input.userId,
+          canEdit: input.canEdit,
+        },
+      })
       return row
     },
 
@@ -412,6 +477,12 @@ export function createNotesService(
         noteId,
         action: 'share.revoke',
         targetUserId: userId,
+      })
+      await recordAudit(LOG_EVENTS.NOTE_UPDATED, {
+        event: LOG_EVENTS.NOTE_UPDATED,
+        entityType: 'note',
+        entityId: noteId,
+        payload: { action: 'share.revoke', targetUserId: userId },
       })
     },
   }

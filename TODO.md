@@ -84,11 +84,11 @@ Risk: HIGH / MEDIUM / LOW.
 
 ## Phase 6 — Files + logging (files-logging-agent)
 
-- [ ] FL-01 | P1 | HIGH | files-logging | File upload (Supabase Storage, scoped path)
-- [ ] FL-02 | P1 | HIGH | files-logging | Per-request permission check before signed URL
-- [ ] FL-03 | P1 | MEDIUM | files-logging | Short-lived signed URLs
-- [ ] FL-04 | P1 | MEDIUM | files-logging | File ↔ note association
-- [ ] FL-05 | P1 | MEDIUM | files-logging | Audit log table + writers for mutations
+- [x] FL-01 | P1 | HIGH | files-logging | File upload (Supabase Storage, scoped path)
+- [x] FL-02 | P1 | HIGH | files-logging | Per-request permission check before signed URL
+- [x] FL-03 | P1 | MEDIUM | files-logging | Short-lived signed URLs
+- [x] FL-04 | P1 | MEDIUM | files-logging | File ↔ note association
+- [x] FL-05 | P1 | MEDIUM | files-logging | Audit log table + writers for mutations
 
 ## Phase 7 — Seed (seed-agent)
 

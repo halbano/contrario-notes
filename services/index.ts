@@ -48,8 +48,8 @@ export function createScopedServices(
   const audit = opts.audit ?? createAuditWriter(log, repos.auditLog)
   return {
     ctx,
-    notes: createNotesService(ctx, repos, log),
-    orgs: createOrgsService(ctx, repos, log),
+    notes: createNotesService(ctx, repos, log, audit),
+    orgs: createOrgsService(ctx, repos, log, audit),
     files: createFilesService(ctx, repos, log, {
       storage: opts.fileStorage,
       audit,
