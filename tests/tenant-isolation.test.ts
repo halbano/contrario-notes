@@ -178,7 +178,7 @@ describe('tenant isolation — services layer (404 surface)', () => {
 })
 
 describe('visibility predicate — listVisible at SQL level', () => {
-  it('cross-org listVisible returns no rows from another org', async () => {
+  it('cross-org listVisible returns no rows from another org (and own org sees it)', async () => {
     const reposA = createRepositories(ctxA, db as never)
     const reposB = createRepositories(ctxB, db as never)
 
@@ -189,9 +189,17 @@ describe('visibility predicate — listVisible at SQL level', () => {
       visibility: 'org',
     })
 
-    const visible = await reposA.notes.listVisible({ limit: 200 })
-    expect(visible.find((r) => r.id === bNote.id)).toBeUndefined()
-    expect(visible.every((r) => r.orgId === ORG_A)).toBe(true)
+    // Negative: org A cannot see org B's note.
+    const fromA = await reposA.notes.listVisible({ limit: 200 })
+    expect(fromA.find((r) => r.id === bNote.id)).toBeUndefined()
+    expect(fromA.every((r) => r.orgId === ORG_A)).toBe(true)
+
+    // Positive symmetry: org B does see its own note. Without this the
+    // negative case would pass spuriously if the predicate returned empty
+    // for everyone.
+    const fromB = await reposB.notes.listVisible({ limit: 200 })
+    expect(fromB.some((r) => r.id === bNote.id)).toBe(true)
+    expect(fromB.every((r) => r.orgId === ORG_B)).toBe(true)
   })
 
   it("private note: only the author's listVisible returns it", async () => {
