@@ -10,12 +10,24 @@ import type { RequestContext } from './types'
  *
  *   - "fetch the org I'm currently scoped to" (by id = ctx.orgId)
  *   - "list orgs I'm a member of" (joined via memberships)
+ *   - "create a new org and immediately add the requester as admin" (atomic)
  *
  * Any broader query is a bug.
  */
 export type OrgsRepository = {
   current(): Promise<DbOrganization | null>
   listForCurrentUser(): Promise<DbOrganization[]>
+  /**
+   * Create a brand-new org AND insert an `admin` membership for the calling
+   * user. Returns the inserted org. The two writes happen in one transaction
+   * — partial state is impossible.
+   *
+   * NOTE: this method is allowed to insert a membership row whose `org_id`
+   * is the brand-new org id (i.e. NOT `ctx.orgId`). It is the only legal
+   * place this happens, because the `organizations` table is the tenant root
+   * and the new org has, by definition, no current ctx yet.
+   */
+  createWithAdmin(input: { slug: string; name: string }): Promise<DbOrganization>
 }
 
 export function createOrgsRepository(ctx: RequestContext, db: AnyDb): OrgsRepository {
@@ -40,6 +52,23 @@ export function createOrgsRepository(ctx: RequestContext, db: AnyDb): OrgsReposi
         .from(organizations)
         .innerJoin(memberships, eq(memberships.orgId, organizations.id))
         .where(eq(memberships.userId, ctx.userId))
+    },
+
+    async createWithAdmin({ slug, name }) {
+      // Drizzle's `transaction` works for both postgres-js and pglite drivers.
+      return db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(organizations)
+          .values({ slug, name })
+          .returning()
+        const org = inserted[0]
+        if (!org) throw new Error('Failed to create organization')
+
+        await tx
+          .insert(memberships)
+          .values({ orgId: org.id, userId: ctx.userId, role: 'admin' })
+        return org
+      })
     },
   }
 }

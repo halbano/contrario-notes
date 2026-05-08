@@ -55,11 +55,11 @@ Risk: HIGH / MEDIUM / LOW.
 
 ## Phase 3 — Auth + Orgs (auth-agent)
 
-- [ ] A-01 | P1 | HIGH | auth | Supabase auth wiring (server + client)
-- [ ] A-02 | P1 | HIGH | auth | Org create / list / switch endpoints
-- [ ] A-03 | P1 | HIGH | auth | Membership management (admin/member/viewer)
-- [ ] A-04 | P1 | HIGH | auth | Org-switching cache invalidation
-- [ ] A-05 | P1 | MEDIUM | auth | Auth event logging
+- [x] A-01 | P1 | HIGH | auth | Supabase auth wiring (server + client)
+- [x] A-02 | P1 | HIGH | auth | Org create / list / switch endpoints
+- [x] A-03 | P1 | HIGH | auth | Membership management (admin/member/viewer)
+- [x] A-04 | P1 | HIGH | auth | Org-switching cache invalidation
+- [x] A-05 | P1 | MEDIUM | auth | Auth event logging
 
 ## Phase 4 — Notes + versioning (notes-agent)
 
@@ -103,3 +103,26 @@ Risk: HIGH / MEDIUM / LOW.
 
 - [ ] R-01 | continuous | varies | review | Run review pass on every open PR against PRE_MERGE_CHECKLIST.md
 - [ ] R-02 | continuous | varies | review | Maintain REVIEW.md with carry-over findings
+
+## Drizzle / RLS follow-ups (execute after PR #8 merges)
+
+Owner: orchestrator (manual) + auth-agent (Phase 4 prod-readiness slice).
+Each box should be ticked here as the task lands.
+
+### Immediate (post-merge, manual)
+
+- [ ] DR-01 | P0 | LOW | orchestrator | Apply `0001_rls.sql` to Supabase cloud DB: `npm run db:migrate` (or via Supabase MCP `apply_migration`)
+- [ ] DR-02 | P0 | LOW | orchestrator | Verify RLS active: `SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname='public'` — every tenant table must show `t`
+- [ ] DR-03 | P0 | LOW | orchestrator | Verify policies present: `SELECT count(*) FROM pg_policies WHERE schemaname='public'` — expect ≥ 24 (4 actions × 6 tables)
+- [ ] DR-04 | P0 | LOW | orchestrator | Verify helper `public.user_org_ids()` exists and returns `{}` with no JWT claim
+- [ ] DR-05 | P1 | LOW | orchestrator | Smoke test end-to-end: sign-up → create-first-org → create note → confirm visible to author; sign-up second user in second org → confirm note from org A NOT visible (validates RLS in real Postgres, not just pglite)
+- [ ] DR-06 | P2 | LOW | orchestrator | `npx drizzle-kit introspect` against live DB, diff against `db/schema.ts` — flag any drift
+
+### Phase 4 — production-readiness (separate slice; high-priority before any prod deploy)
+
+- [ ] DR-PROD-01 | P0 | **HIGH** | auth-agent (followup) | Wire `auth.admin.updateUserById` to write `app_metadata.org_ids` on every membership mutation (`addMember`, `removeMember`, `changeRole`, `createOrgWithAdmin`). Without this, RLS denies legitimate access for users on first session, AND retains DB access for ex-members until their JWT expires. **Block prod deploy on this.**
+- [ ] DR-PROD-02 | P1 | MEDIUM | auth-agent (followup) | Configure short JWT expiry (15 min recommended). Reduces stale-claim window after membership change.
+- [ ] DR-PROD-03 | P1 | HIGH | auth-agent (followup) | On `removeMember` / role-downgrade, invalidate user sessions: `supabase.auth.admin.signOut(userId, 'global')` (Option B in NOTES.md). Forces fresh JWT issuance with updated claims.
+- [ ] DR-PROD-04 | P2 | MEDIUM | ci-quality-agent | CI-04 follow-up: spin up ephemeral Postgres in CI, apply all migrations in order, validate against snapshot. Closes the migrate-validation gap.
+- [ ] DR-PROD-05 | P2 | LOW | orchestrator | Document migration runbook in `docs/RUNBOOK.md`: stage vs prod application order, rollback strategy, on-call procedure if a migration corrupts data.
+- [ ] DR-PROD-06 | P2 | LOW | orchestrator | Add `pre-deploy` GitHub Action that diffs `drizzle/` vs target environment's applied migrations. Block deploys on un-applied migrations.

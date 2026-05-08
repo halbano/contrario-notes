@@ -1,11 +1,16 @@
 import { getDb } from '@/db/client'
 import { createNotesRepository, type AnyDb, type NotesRepository } from './notes-repository'
 import { createOrgsRepository, type OrgsRepository } from './orgs-repository'
+import {
+  createMembershipsRepository,
+  type MembershipsRepository,
+} from './memberships-repository'
 import type { RequestContext } from './types'
 
 export type Repositories = {
   notes: NotesRepository
   orgs: OrgsRepository
+  memberships: MembershipsRepository
 }
 
 /**
@@ -20,8 +25,9 @@ export function createRepositories(ctx: RequestContext, db?: AnyDb): Repositorie
   return {
     notes: createNotesRepository(ctx, handle),
     orgs: createOrgsRepository(ctx, handle),
+    memberships: createMembershipsRepository(ctx, handle),
   }
 }
 
-export type { NotesRepository, OrgsRepository, AnyDb }
+export type { NotesRepository, OrgsRepository, MembershipsRepository, AnyDb }
 export { scopedWhere, withOrgId } from './base-repository'

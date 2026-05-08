@@ -11,9 +11,14 @@ export default defineConfig({
       'permissions/**/*.test.ts',
       'repositories/**/*.test.ts',
       'services/**/*.test.ts',
+      'features/**/*.test.ts',
       'tests/**/*.test.ts',
     ],
     exclude: ['node_modules/**', '.next/**', 'drizzle/**'],
+    env: {
+      // Suppress info-level logging in tests to keep CI output readable.
+      LOG_LEVEL: 'error',
+    },
   },
   resolve: {
     alias: {
