@@ -32,6 +32,7 @@ function makeRepos(initialNote: DbNote | null) {
     notes: {
       findById: vi.fn(async (_id: string) => store),
       listRecent: vi.fn(async () => (store ? [store] : [])),
+      listVisible: vi.fn(async () => (store ? [store] : [])),
       create: vi.fn(async (input) => {
         store = makeNote({ ...input, orgId: ORG, id: 'n-new' })
         return store

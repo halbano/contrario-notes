@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import type { PgDatabase } from 'drizzle-orm/pg-core'
 import { notes, type DbNote, type DbNoteInsert } from '@/db/schema'
+import { visibleNotesPredicate } from '@/permissions/note-visibility-sql'
 import { scopedWhere, withOrgId } from './base-repository'
 import type { RequestContext } from './types'
 
@@ -19,6 +20,13 @@ export type CreateNoteInput = Omit<DbNoteInsert, 'orgId'>
 export type NotesRepository = {
   findById(id: string): Promise<DbNote | null>
   listRecent(opts?: { limit?: number }): Promise<DbNote[]>
+  /**
+   * Visibility-filtered recency list. Applies `visibleNotesPredicate(ctx)` at
+   * SQL level — the only correct entry point for surfaces that must respect
+   * private/shared semantics (UI lists, search). The org-scoping predicate is
+   * embedded inside the fragment, so we do not also AND `scopedWhere` here.
+   */
+  listVisible(opts?: { limit?: number }): Promise<DbNote[]>
   create(input: CreateNoteInput): Promise<DbNote>
   update(id: string, patch: Partial<Omit<DbNoteInsert, 'id' | 'orgId'>>): Promise<DbNote | null>
   softDelete(id: string): Promise<boolean>
@@ -41,6 +49,16 @@ export function createNotesRepository(ctx: RequestContext, db: AnyDb): NotesRepo
         .select()
         .from(notes)
         .where(scopedWhere(ctx, notes, isNull(notes.deletedAt)))
+        .orderBy(desc(notes.updatedAt))
+        .limit(limit)
+    },
+
+    async listVisible(opts = {}) {
+      const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200)
+      return db
+        .select()
+        .from(notes)
+        .where(and(visibleNotesPredicate(ctx), isNull(notes.deletedAt))!)
         .orderBy(desc(notes.updatedAt))
         .limit(limit)
     },
