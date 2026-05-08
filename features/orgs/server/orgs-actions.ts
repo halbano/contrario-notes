@@ -28,6 +28,7 @@ import { createOrgsRepository } from '@/repositories/orgs-repository'
 import { getDb } from '@/db/client'
 import { AppError } from '@/lib/errors'
 import { logger, LOG_EVENTS } from '@/logging'
+import { syncUserOrgIds } from '@/features/auth/server/jwt-sync'
 
 export type OrgActionResult =
   | { ok: true }
@@ -62,6 +63,10 @@ export async function createFirstOrgAction(formData: FormData): Promise<OrgActio
   const repo = createOrgsRepository(ctx, getDb() as never)
   try {
     const org = await repo.createWithAdmin({ slug, name })
+    // DR-PROD-01: this path bypasses orgs-service so the JWT-sync there
+    // doesn't fire automatically. Sync explicitly so RLS recognises the
+    // brand-new org on the user's next request.
+    await syncUserOrgIds(user.id, logger)
     await writeActiveOrgCookie(org.id)
     logger.log(LOG_EVENTS.AUTH_ORG_CREATED, { orgId: org.id, userId: user.id })
     revalidatePath('/', 'layout')
