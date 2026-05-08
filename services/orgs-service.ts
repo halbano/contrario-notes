@@ -7,6 +7,35 @@ import {
   canChangeMembershipRole,
   canManageMemberships,
 } from '@/permissions/org-permissions'
+import {
+  signOutUserGlobally,
+  syncUserOrgIds,
+} from '@/features/auth/server/jwt-sync'
+
+/**
+ * Hook for tests: lets us swap out the JWT-sync helpers without touching the
+ * Supabase admin client. Default implementations are the real helpers above.
+ *
+ * Production code never calls `setOrgsServiceJwtSyncForTests`; only the
+ * orgs-service unit tests do.
+ */
+type JwtSyncImpl = {
+  syncUserOrgIds: typeof syncUserOrgIds
+  signOutUserGlobally: typeof signOutUserGlobally
+}
+let jwtSyncImpl: JwtSyncImpl = {
+  syncUserOrgIds,
+  signOutUserGlobally,
+}
+export function setOrgsServiceJwtSyncForTests(impl: Partial<JwtSyncImpl>): void {
+  jwtSyncImpl = {
+    syncUserOrgIds: impl.syncUserOrgIds ?? syncUserOrgIds,
+    signOutUserGlobally: impl.signOutUserGlobally ?? signOutUserGlobally,
+  }
+}
+export function resetOrgsServiceJwtSyncForTests(): void {
+  jwtSyncImpl = { syncUserOrgIds, signOutUserGlobally }
+}
 
 export type OrgsService = ReturnType<typeof createOrgsService>
 
@@ -58,6 +87,8 @@ export function createOrgsService(
         orgId: org.id,
         userId: ctx.userId,
       })
+      // DR-PROD-01: refresh app_metadata.org_ids so RLS sees the new org.
+      await jwtSyncImpl.syncUserOrgIds(ctx.userId, logger)
       return org
     },
 
@@ -88,10 +119,21 @@ export function createOrgsService(
         action: 'add',
         role: input.role,
       })
+      // DR-PROD-01: the *added* user's claim must include this org so RLS
+      // recognises them on their next request. We sync the target user, NOT
+      // the caller (who already has it).
+      await jwtSyncImpl.syncUserOrgIds(input.userId, logger)
       return row
     },
 
-    /** Change a member's role in the current org. Admin-only. */
+    /**
+     * Change a member's role in the current org. Admin-only.
+     *
+     * NOTE (DR-PROD-01): role changes do NOT alter the (user_id, org_id)
+     * pair, so they cannot affect `app_metadata.org_ids`. We deliberately do
+     * NOT call `syncUserOrgIds` here — re-issuing the claim on every role
+     * tweak would be wasted Supabase admin calls.
+     */
     async changeRole(membershipId: string, role: Role) {
       if (!canChangeMembershipRole(ctx)) {
         logger.log(LOG_EVENTS.PERMISSION_DENIED, {
@@ -148,14 +190,31 @@ export function createOrgsService(
         })
         throw new AppError('not_found', 'Not found')
       }
+      // Capture the userId BEFORE deleting so we can refresh their JWT
+      // claim and revoke active sessions afterwards (DR-PROD-01). When the
+      // repo doesn't expose `findById` (older callers / mocks) we fall back
+      // to scanning the org's membership list.
+      const target = repos.memberships.findById
+        ? await repos.memberships.findById(membershipId)
+        : (await repos.memberships.listForCurrentOrg()).find(
+            (m) => m.id === membershipId,
+          ) ?? null
+      if (!target) throw new AppError('not_found', 'Membership not found')
       const ok = await repos.memberships.remove(membershipId)
       if (!ok) throw new AppError('not_found', 'Membership not found')
       logger.log(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
         orgId: ctx.orgId,
         userId: ctx.userId,
         membershipId,
+        targetUserId: target.userId,
         action: 'remove',
       })
+      // DR-PROD-01: trim the claim AND invalidate any in-flight session so a
+      // stale JWT (still encoding the old org_ids) is rejected on next use.
+      // Order matters: sync claim first so when the user signs back in, RLS
+      // already reflects the removal; signOut second to revoke active tokens.
+      await jwtSyncImpl.syncUserOrgIds(target.userId, logger)
+      await jwtSyncImpl.signOutUserGlobally(target.userId, logger)
     },
   }
 }

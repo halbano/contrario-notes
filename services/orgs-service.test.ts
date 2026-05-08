@@ -1,5 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createScopedServices } from './index'
+import {
+  resetOrgsServiceJwtSyncForTests,
+  setOrgsServiceJwtSyncForTests,
+} from './orgs-service'
 import type { DbMembership, DbOrganization } from '@/db/schema'
 import type { RequestContext } from '@/lib/request-context'
 import type { Repositories } from '@/repositories'
@@ -63,6 +67,7 @@ function makeRepos(): Repositories {
       ),
       updateRole: vi.fn(async (id, role) => membership({ id, role })),
       remove: vi.fn(async () => true),
+      findById: vi.fn(async (id) => membership({ id })),
     },
     noteVersions: {
       createVersion: vi.fn(),
@@ -95,8 +100,22 @@ function silent() {
   if (!_silent) _silent = createLogger({ sink: () => undefined, minLevel: 'error' })
   return _silent
 }
+
+let syncSpy: ReturnType<typeof vi.fn>
+let signOutSpy: ReturnType<typeof vi.fn>
+
 beforeEach(() => {
   _silent = undefined
+  syncSpy = vi.fn(async () => ({ orgIds: [] }))
+  signOutSpy = vi.fn(async () => undefined)
+  setOrgsServiceJwtSyncForTests({
+    syncUserOrgIds: syncSpy as never,
+    signOutUserGlobally: signOutSpy as never,
+  })
+})
+
+afterEach(() => {
+  resetOrgsServiceJwtSyncForTests()
 })
 
 describe('orgs-service.createOrg', () => {
@@ -220,5 +239,62 @@ describe('orgs-service membership management — admin gating', () => {
     await expect(svc.orgs.removeMember('m-1')).rejects.toMatchObject({
       code: 'not_found',
     })
+  })
+
+  it('removeMember on missing membership → not_found and no sync/signOut', async () => {
+    const repos = makeRepos()
+    repos.memberships.findById = vi.fn(async () => null)
+    const svc = createScopedServices(ctxOf('admin'), { repositories: repos, logger: silent() })
+    await expect(svc.orgs.removeMember('does-not-exist')).rejects.toMatchObject({
+      code: 'not_found',
+    })
+    expect(syncSpy).not.toHaveBeenCalled()
+    expect(signOutSpy).not.toHaveBeenCalled()
+  })
+})
+
+// -----------------------------------------------------------------------------
+// DR-PROD-01: JWT-sync wiring
+// -----------------------------------------------------------------------------
+describe('orgs-service — DR-PROD-01 JWT sync wiring', () => {
+  it('createOrg syncs the creator after the membership row is written', async () => {
+    const repos = makeRepos()
+    const svc = createScopedServices(ctxOf('member'), { repositories: repos, logger: silent() })
+    await svc.orgs.createOrg({ slug: 'team-c', name: 'Team C' })
+    expect(syncSpy).toHaveBeenCalledOnce()
+    expect(syncSpy).toHaveBeenCalledWith(ME, expect.anything())
+    expect(signOutSpy).not.toHaveBeenCalled()
+  })
+
+  it('addMember syncs the TARGET user (not the caller)', async () => {
+    const repos = makeRepos()
+    const svc = createScopedServices(ctxOf('admin'), { repositories: repos, logger: silent() })
+    await svc.orgs.addMember({ userId: OTHER, role: 'member' })
+    expect(syncSpy).toHaveBeenCalledOnce()
+    expect(syncSpy).toHaveBeenCalledWith(OTHER, expect.anything())
+    expect(signOutSpy).not.toHaveBeenCalled()
+  })
+
+  it('changeRole does NOT sync (role-only change cannot affect org_ids)', async () => {
+    const repos = makeRepos()
+    const svc = createScopedServices(ctxOf('admin'), { repositories: repos, logger: silent() })
+    await svc.orgs.changeRole('m-1', 'admin')
+    expect(syncSpy).not.toHaveBeenCalled()
+    expect(signOutSpy).not.toHaveBeenCalled()
+  })
+
+  it('removeMember syncs the removed user AND signs them out globally', async () => {
+    const repos = makeRepos()
+    repos.memberships.findById = vi.fn(async () => membership({ userId: OTHER }))
+    repos.memberships.remove = vi.fn(async () => true)
+    const svc = createScopedServices(ctxOf('admin'), { repositories: repos, logger: silent() })
+    await svc.orgs.removeMember('m-1')
+    expect(syncSpy).toHaveBeenCalledWith(OTHER, expect.anything())
+    expect(signOutSpy).toHaveBeenCalledWith(OTHER, expect.anything())
+    // Order: sync MUST run before signOut so the next sign-in finds the
+    // refreshed claim already in place.
+    const syncOrder = syncSpy.mock.invocationCallOrder[0]!
+    const signOutOrder = signOutSpy.mock.invocationCallOrder[0]!
+    expect(syncOrder).toBeLessThan(signOutOrder)
   })
 })
