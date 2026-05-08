@@ -19,6 +19,7 @@ function makeNote(overrides: Partial<DbNote> = {}): DbNote {
     content: 'c',
     visibility: 'org',
     tagsText: '',
+    searchTsv: null,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
     deletedAt: null,

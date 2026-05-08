@@ -29,6 +29,13 @@
       "when": 1778204000000,
       "tag": "0003_rls_note_shares",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778290000000,
+      "tag": "0004_search_fts",
+      "breakpoints": true
     }
   ]
 }

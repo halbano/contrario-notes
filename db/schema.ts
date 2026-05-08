@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   bigint,
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -12,6 +13,21 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+
+/**
+ * Postgres `tsvector`. Drizzle has no native helper. We model it as an opaque
+ * string at the TS level — search code uses raw `sql` fragments to read it
+ * (`@@`, `ts_rank(...)`), never selecting the column directly. The column is
+ * `GENERATED ALWAYS AS (...) STORED` (see drizzle/0004_search_fts.sql); we
+ * mark it with `.generatedAlwaysAs(sql\`...\`)` so drizzle-kit's diffing
+ * recognizes it as a generated column and does not propose to drop / re-create
+ * it on subsequent migrations.
+ */
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return 'tsvector'
+  },
+})
 
 /**
  * Tenancy invariant (ADR-0001): every tenant-owned table carries
@@ -90,6 +106,15 @@ export const notes = pgTable(
       .default('org'),
     // Denormalized tags string for FTS composition (ADR-0004).
     tagsText: text('tags_text').notNull().default(''),
+    /**
+     * Full-text search vector — `to_tsvector('simple', title || ' ' || content
+     * || ' ' || tags_text)`. Provisioned by `drizzle/0004_search_fts.sql` as
+     * `GENERATED ALWAYS AS (...) STORED`. Backed by GIN index
+     * `notes_search_tsv_idx`. Read-only at the application layer.
+     */
+    searchTsv: tsvector('search_tsv').generatedAlwaysAs(
+      sql`to_tsvector('simple', coalesce("title", '') || ' ' || coalesce("content", '') || ' ' || coalesce("tags_text", ''))`,
+    ),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
