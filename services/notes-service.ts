@@ -327,6 +327,26 @@ export function createNotesService(
     },
 
     /**
+     * Display-ready shares list (joined with `users`). Same authorization
+     * gate as `listShares`.
+     */
+    async listSharesWithUsers(noteId: string) {
+      const note = await repos.notes.findById(noteId)
+      if (!note || !canShareNote(note)) return []
+      return repos.noteShares.listForNoteWithUsers(noteId)
+    },
+
+    /** Org members for the share picker (display-ready). Anyone may read. */
+    async listOrgMembers() {
+      return repos.noteShares.listOrgMembersWithUsers()
+    },
+
+    /** Whether the current user may share `note`. Surface for UI gating. */
+    canShare(note: DbNote): boolean {
+      return canShareNote(note)
+    },
+
+    /**
      * Grant `userId` read (or read+edit) access to `noteId`. Only the note's
      * author or an org admin may grant. Target user MUST be a member of the
      * note's org — enforced server-side.

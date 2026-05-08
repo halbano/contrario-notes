@@ -87,6 +87,8 @@ function makeRepos(initialNote: DbNote | null) {
     },
     noteShares: {
       listForNote: vi.fn(async () => []),
+      listForNoteWithUsers: vi.fn(async () => []),
+      listOrgMembersWithUsers: vi.fn(async () => []),
       grant: vi.fn(async () => {
         throw new Error('not used')
       }),

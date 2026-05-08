@@ -80,6 +80,8 @@ function makeRepos(): Repositories {
     },
     noteShares: {
       listForNote: vi.fn(async () => []),
+      listForNoteWithUsers: vi.fn(async () => []),
+      listOrgMembersWithUsers: vi.fn(async () => []),
       grant: vi.fn(),
       revoke: vi.fn(async () => false),
       has: vi.fn(async () => false),
