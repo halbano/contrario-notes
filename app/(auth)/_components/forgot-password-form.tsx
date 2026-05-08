@@ -5,44 +5,52 @@ import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { requestPasswordReset } from './auth-actions'
 import { forgotPasswordSchema, type AuthFieldErrors } from './auth-schemas'
 
 /**
- * Forgot-password form (UI stub).
+ * Forgot-password form.
  *
- * On submit we run client-side Zod validation only and flip into a local
- * "submitted" state showing the "Check your inbox" confirmation. The server
- * action `requestPasswordReset` exists (`auth-actions.ts`) but is not called
- * here yet — the `auth-agent` will replace this stub with a real call once
- * Supabase is wired. Per security best-practice, the eventual success
- * response must NOT leak whether the email is registered.
+ * Calls the `requestPasswordReset` server action. Per security best-practice
+ * the response is uniform: same success message regardless of whether the
+ * email is registered. The server action enforces this; the UI just displays.
  */
 interface State {
   fieldErrors: AuthFieldErrors
   submittedEmail: string | null
+  pending: boolean
 }
 
-const initialState: State = { fieldErrors: {}, submittedEmail: null }
+const initialState: State = { fieldErrors: {}, submittedEmail: null, pending: false }
 
 export function ForgotPasswordForm() {
   const [state, setState] = React.useState<State>(initialState)
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const formData = new FormData(e.currentTarget)
+    const form = e.currentTarget
+    const formData = new FormData(form)
     const parsed = forgotPasswordSchema.safeParse({
       email: formData.get('email'),
     })
     if (!parsed.success) {
       setState({
+        ...initialState,
         fieldErrors: parsed.error.flatten().fieldErrors as AuthFieldErrors,
-        submittedEmail: null,
       })
       return
     }
-    // TODO(auth-agent): replace with `requestPasswordReset(formData)` call and
-    // surface server-side validation errors via `result.fieldErrors`.
-    setState({ fieldErrors: {}, submittedEmail: parsed.data.email })
+    setState({ fieldErrors: {}, submittedEmail: null, pending: true })
+    const result = await requestPasswordReset(formData)
+    if (!result.ok) {
+      setState({
+        fieldErrors: result.fieldErrors ?? {},
+        submittedEmail: null,
+        pending: false,
+      })
+      return
+    }
+    setState({ fieldErrors: {}, submittedEmail: parsed.data.email, pending: false })
   }
 
   if (state.submittedEmail) {
@@ -100,8 +108,8 @@ export function ForgotPasswordForm() {
         )}
       </div>
 
-      <Button type="submit" className="w-full">
-        Send reset link
+      <Button type="submit" className="w-full" disabled={state.pending}>
+        {state.pending ? 'Sending…' : 'Send reset link'}
       </Button>
     </form>
   )

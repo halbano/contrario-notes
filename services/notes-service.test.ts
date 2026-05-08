@@ -50,6 +50,19 @@ function makeRepos(initialNote: DbNote | null) {
     orgs: {
       current: vi.fn(async () => null),
       listForCurrentUser: vi.fn(async () => []),
+      createWithAdmin: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+    },
+    memberships: {
+      listForCurrentOrg: vi.fn(async () => []),
+      findForCurrentUser: vi.fn(async () => null),
+      findForUserAndOrg: vi.fn(async () => null),
+      add: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+      updateRole: vi.fn(async () => null),
+      remove: vi.fn(async () => false),
     },
   }
   return { repos, peek: () => store }
