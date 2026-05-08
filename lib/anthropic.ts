@@ -72,4 +72,4 @@ export function createAnthropicClient(): AnthropicClient {
 }
 
 /** The default model the AI service uses. Pinned per ADR-0006. */
-export const DEFAULT_AI_MODEL = 'claude-sonnet-4-5-20250929'
+export const DEFAULT_AI_MODEL = 'claude-sonnet-4-6'
