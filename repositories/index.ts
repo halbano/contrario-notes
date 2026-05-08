@@ -5,12 +5,26 @@ import {
   createMembershipsRepository,
   type MembershipsRepository,
 } from './memberships-repository'
+import {
+  createNoteVersionsRepository,
+  type NoteVersionsRepository,
+} from './note-versions-repository'
+import { createTagsRepository, type TagsRepository } from './tags-repository'
+import {
+  createNoteSharesRepository,
+  type NoteSharesRepository,
+} from './note-shares-repository'
 import type { RequestContext } from './types'
 
 export type Repositories = {
   notes: NotesRepository
   orgs: OrgsRepository
   memberships: MembershipsRepository
+  noteVersions: NoteVersionsRepository
+  tags: TagsRepository
+  noteShares: NoteSharesRepository
+  /** Underlying handle — services that need transactions reach into this. */
+  db: AnyDb
 }
 
 /**
@@ -26,8 +40,20 @@ export function createRepositories(ctx: RequestContext, db?: AnyDb): Repositorie
     notes: createNotesRepository(ctx, handle),
     orgs: createOrgsRepository(ctx, handle),
     memberships: createMembershipsRepository(ctx, handle),
+    noteVersions: createNoteVersionsRepository(ctx, handle),
+    tags: createTagsRepository(ctx, handle),
+    noteShares: createNoteSharesRepository(ctx, handle),
+    db: handle,
   }
 }
 
-export type { NotesRepository, OrgsRepository, MembershipsRepository, AnyDb }
+export type {
+  NotesRepository,
+  OrgsRepository,
+  MembershipsRepository,
+  NoteVersionsRepository,
+  TagsRepository,
+  NoteSharesRepository,
+  AnyDb,
+}
 export { scopedWhere, withOrgId } from './base-repository'
