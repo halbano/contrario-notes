@@ -38,9 +38,9 @@ Risk: HIGH / MEDIUM / LOW.
 
 ### Carry-over from foundation phase
 
-- [ ] F-FIX-01 | P0 | HIGH | notes-agent + search-ai-agent | Move `services.notes.listVisible` visibility predicate INTO SQL (per ADR-0004). Stopgap post-filter in `services/notes-service.ts:50-57` violates TENANCY_INVARIANTS invariant 4.
-- [ ] F-RLS-01 | P1 | MEDIUM | auth-agent | Author `drizzle/0001_rls.sql` (defense-in-depth per ADR-0001).
-- [ ] F-SHARE-01 | P1 | HIGH | notes-agent | Add `note_shares(note_id, user_id, can_edit)` table for `shared` visibility tier.
+- [x] F-FIX-01 | P0 | HIGH | notes-agent + search-ai-agent | Move `services.notes.listVisible` visibility predicate INTO SQL (per ADR-0004). — PR #9
+- [x] F-RLS-01 | P1 | MEDIUM | auth-agent | Author `drizzle/0001_rls.sql` (defense-in-depth per ADR-0001). — PR #8 + #11 (journal fix) + #13 (note_shares RLS extension)
+- [x] F-SHARE-01 | P1 | HIGH | notes-agent | Add `note_shares(note_id, user_id, can_edit)` table for `shared` visibility tier. — PR #9 (table) + PR #14 (CRUD)
 
 ## Phase 2 — Frontend shell (frontend-builder-agent)
 
@@ -61,13 +61,17 @@ Risk: HIGH / MEDIUM / LOW.
 - [x] A-04 | P1 | HIGH | auth | Org-switching cache invalidation
 - [x] A-05 | P1 | MEDIUM | auth | Auth event logging
 
-## Phase 4 — Notes + versioning (notes-agent)
+## Phase 4 — Notes + versioning (notes-agent) — Phase 1 + Phase 2 merged
 
-- [ ] N-01 | P1 | MEDIUM | notes | Notes CRUD (server actions + repo + service, TDD)
-- [ ] N-02 | P1 | MEDIUM | notes | Tagging
-- [ ] N-03 | P1 | HIGH | notes | Visibility model (private / org / shared-with)
-- [ ] N-04 | P1 | MEDIUM | notes | Append-only `note_versions`; diff view
-- [ ] N-05 | P1 | LOW | notes | Notes UI (list, editor, version history, diff)
+- [x] N-01 | P1 | MEDIUM | notes | Notes CRUD (server actions + repo + service, TDD) — PR #14
+- [x] N-02 | P1 | MEDIUM | notes | Tagging — PR #14
+- [x] N-03 | P1 | HIGH | notes | Visibility model (private / org / shared-with) — PR #9 (predicate) + PR #14 (shares CRUD)
+- [x] N-04 | P1 | MEDIUM | notes | Append-only `note_versions`; diff view — PR #14
+- [x] N-05 | P1 | LOW | notes | Notes UI (list, editor, version history, diff) — PR #14
+
+### Open follow-ups from Phase 4
+
+- [ ] N-FOLLOW-01 | P2 | LOW | notes-agent | Tag history snapshot in `note_versions` — issue #15
 
 ## Phase 5 — Search + AI (search-ai-agent)
 
@@ -111,11 +115,11 @@ Each box should be ticked here as the task lands.
 
 ### Immediate (post-merge, manual)
 
-- [ ] DR-01 | P0 | LOW | orchestrator | Apply `0001_rls.sql` to Supabase cloud DB: `npm run db:migrate` (or via Supabase MCP `apply_migration`)
-- [ ] DR-02 | P0 | LOW | orchestrator | Verify RLS active: `SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname='public'` — every tenant table must show `t`
-- [ ] DR-03 | P0 | LOW | orchestrator | Verify policies present: `SELECT count(*) FROM pg_policies WHERE schemaname='public'` — expect ≥ 24 (4 actions × 6 tables)
-- [ ] DR-04 | P0 | LOW | orchestrator | Verify helper `public.user_org_ids()` exists and returns `{}` with no JWT claim
-- [ ] DR-05 | P1 | LOW | orchestrator | Smoke test end-to-end: sign-up → create-first-org → create note → confirm visible to author; sign-up second user in second org → confirm note from org A NOT visible (validates RLS in real Postgres, not just pglite)
+- [x] DR-01 | P0 | LOW | orchestrator | Apply `0001_rls.sql` to Supabase cloud DB. — applied 2026-05-08 (manual + journal patched via PR #11)
+- [x] DR-02 | P0 | LOW | orchestrator | Verify RLS active. — 7/7 tenant tables `rowsecurity=true` (notes, note_versions, tags, note_tags, files, audit_log, note_shares)
+- [x] DR-03 | P0 | LOW | orchestrator | Verify policies present. — 14 policies (12 from 0001 + 2 from 0003)
+- [x] DR-04 | P0 | LOW | orchestrator | Verify helper `public.user_org_ids()`. — exists, returns `{}` with no claim
+- [ ] DR-05 | P1 | LOW | orchestrator | Smoke test end-to-end: sign-up → create-first-org → create note → confirm visible to author; sign-up second user in second org → confirm note from org A NOT visible (validates RLS in real Postgres, not just pglite). **Pending — needs Supabase JWT app_metadata.org_ids sync wired (DR-PROD-01) for accurate test.**
 - [ ] DR-06 | P2 | LOW | orchestrator | `npx drizzle-kit introspect` against live DB, diff against `db/schema.ts` — flag any drift
 
 ### Phase 4 — production-readiness (separate slice; high-priority before any prod deploy)

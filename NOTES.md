@@ -97,16 +97,22 @@ Branch: `feat/foundation-architecture` — three commits, tree clean, **71/71 te
 
 | Level | Description | Owner | Status |
 |---|---|---|---|
-| **HIGH** | `services.notes.listVisible` post-filters; must move to SQL before list/search UI | notes-agent + search-ai-agent | open |
+| **HIGH** | JWT `app_metadata.org_ids` sync — RLS denies legitimate access for new memberships AND retains ex-member DB access until JWT expiry | auth-agent (DR-PROD-01) | **open / blocks prod deploy** |
 | HIGH | Search visibility filtering must be SQL-level | search-ai-agent | open |
 | HIGH | AI summary context must respect user-visible notes only | search-ai-agent | open |
 | HIGH | Signed URL generation requires per-request permission check | files-logging-agent | open |
-| MEDIUM | Org switching cache invalidation | auth-agent | resolved (`switchOrgAction` calls `revalidatePath('/', 'layout')`) |
+| MEDIUM | Org switching cache invalidation | auth-agent | resolved (PR #8 — `switchOrgAction` calls `revalidatePath('/', 'layout')`) |
 | MEDIUM | FTS performance at ~10k notes | search-ai-agent | open |
 | MEDIUM | Next 15.1.3 CVE-2025-66478 flagged by npm audit; investigate + bump if needed | foundation/orchestrator | open |
-| LOW | Migration ordering across worktrees (foundation owns 0000, others propose deltas) | orchestrator | open |
-| LOW | RLS not yet implemented (defense-in-depth gap) | auth-agent | resolved (`drizzle/0001_rls.sql` + RLS isolation harness) |
+| MEDIUM | Drizzle journal entry for 0001_rls missing on initial PR #8 — caused `npm run db:migrate` to silently skip the RLS migration on cloud DB | orchestrator | resolved (PR #11) |
+| LOW | `services.notes.listVisible` post-filters; must move to SQL before list/search UI | notes-agent + search-ai-agent | resolved (PR #9 — Drizzle SQL fragment in `permissions/note-visibility-sql.ts`) |
+| LOW | Migration ordering across worktrees (foundation owns 0000, others propose deltas) | orchestrator | resolved (0000 foundation, 0001 auth, 0002 notes-phase-1, 0003 RLS-extension) |
+| LOW | RLS not yet implemented (defense-in-depth gap) | auth-agent | resolved (PR #8 + #13 — 7/7 tenant tables, 14 policies on cloud) |
+| LOW | `note_shares` table not covered by 0001 RLS (predated table) | orchestrator | resolved (PR #13 — 0003_rls_note_shares) |
 | LOW | CI-04 migrate validation deferred (needs Supabase test instance) | ci-quality-agent | deferred |
+| LOW | CI workflow had invalid job-level `hashFiles()` → blocked all CI runs | ci-quality-agent | resolved (PR #10) |
+| LOW | Docker build failed on missing `public/` directory | frontend | resolved (PR #12) |
+| LOW | Side-nav links 404'd (Notes/Search/Files/AI/Settings routes absent) | frontend | resolved (PR #7) |
 
 ## Auth flow (auth-agent)
 
@@ -135,19 +141,69 @@ Phase 4 — currently we rely on app-layer scoping; RLS is exercised by the
 isolation harness against pglite). Tests in `tests/rls-isolation.test.ts`
 impersonate a non-owner role and verify zero-row + WITH CHECK rejection.
 
-## Confidence score (live, updated)
+## Confidence score (live, updated 2026-05-08)
 
 | Area | Weight | Score (0-1) | Weighted |
 |---|---|---|---|
-| Tenant isolation | 40 | 0.55 | 22.0 |
-| Permission enforcement | 20 | 0.55 | 11.0 |
-| Feature completeness | 20 | 0.20 | 4.0 |
-| Review discipline | 10 | 0.65 | 6.5 |
-| Observability | 10 | 0.55 | 5.5 |
+| Tenant isolation | 40 | 0.85 | 34.0 |
+| Permission enforcement | 20 | 0.80 | 16.0 |
+| Feature completeness | 20 | 0.50 | 10.0 |
+| Review discipline | 10 | 0.80 | 8.0 |
+| Observability | 10 | 0.65 | 6.5 |
 
-**Total: 49.0 / 100**. Up from 44.0 (foundation only).
+**Total: 74.5 / 100**. Up from 49.0 after auth (#8) + notes Phase 1 (#9) + RLS-extension (#13) + Phase 2 (#14) merged.
 
-Note: tenant isolation scored 0.55 — pattern is in place + 7 isolation tests pass, but the `listVisible` post-filter is a known violation pending the notes-agent fix. Will rise to ~0.85 after that fix lands.
+Drivers of the bump:
+
+- **Tenant isolation 0.55 → 0.85**: SQL-level visibility predicate replaced post-filter; 19 new pglite isolation assertions; 7/7 tenant tables under RLS on cloud.
+- **Permission enforcement 0.55 → 0.80**: org-permissions matrix + 17 unit tests; share grant validation; 4-corner role × visibility coverage.
+- **Feature completeness 0.20 → 0.50**: notes CRUD + versioning + tagging + sharing UI + version diff are end-to-end functional.
+- **Review discipline 0.65 → 0.80**: 13 PRs landed with consistent risk labels, conflict resolution, and Copilot-review responses.
+- **Observability 0.55 → 0.65**: auth event taxonomy + structured logging in place; mutation audit log writers still pending (files-logging-agent slice).
+
+Hard-fail conditions: still NONE confirmed. JWT-claim-sync gap is a **block-prod-deploy** item (DR-PROD-01); does not affect dev confidence.
+
+---
+
+## 2026-05-08 — Auth + Notes Phase 1/2 + chore PRs merged
+
+User merged a batch of 7 PRs covering auth, notes, RLS, and infrastructure fix-ups.
+
+### What landed
+
+- **PR #8 auth-agent**: Supabase auth wiring (signin/signup/signout/reset, don't-leak-existence on reset), org create / list / switch with httpOnly active-org cookie, membership management (admin-gated), `lib/auth-context.ts` extending `buildRequestContext` with cookie + memberships consultation, role matrix in `permissions/org-permissions.ts` (17 tests), 8 new auth event types, **`drizzle/0001_rls.sql` validated against pglite** (5 RLS isolation tests).
+- **PR #9 notes-agent (phase 1)**: `note_shares` schema (`drizzle/0002_note_shares.sql`), SQL-level visibility predicate in `permissions/note-visibility-sql.ts` (replaces stopgap post-filter), 6 new isolation assertions covering all tiers + symmetry.
+- **PR #10 ci-quality**: removed invalid job-level `hashFiles()` from docker-build job (workflow parse error fix).
+- **PR #11 orchestrator**: registered `0001_rls` in `drizzle/meta/_journal.json` (auth-agent's PR didn't update it; `npm run db:migrate` was silently skipping the RLS migration).
+- **PR #12 frontend**: `public/.gitkeep` so Docker `COPY --from=build /app/public ./public` succeeds.
+- **PR #13 orchestrator**: `drizzle/0003_rls_note_shares.sql` extending RLS to the `note_shares` table; matched 0001's exact policy style (no `TO authenticated` clause — pglite has no Supabase auth schema, so role doesn't exist there).
+- **PR #14 notes-agent (phase 2)**: full notes CRUD + versioning write-path + tagging + share CRUD + version diff UI. 5 commits + Copilot-review polish (char counters, share-picker disabled state, history hint, diff-lib rationale comment). 19 new isolation assertions (146 tests total).
+
+### Cloud DB state
+
+- 4 migrations applied: `0000_init`, `0001_rls`, `0002_note_shares`, `0003_rls_note_shares`.
+- 7/7 tenant tables under RLS: `notes`, `note_versions`, `tags`, `note_tags`, `files`, `audit_log`, `note_shares`.
+- 14 policies installed.
+- `public.user_org_ids()` helper present, returns `{}` with no JWT claim.
+- `drizzle.__drizzle_migrations` patched after manual 0001 application — repo + cloud now match exactly (hashes verified).
+
+### Process learnings
+
+- **Drizzle journal can drift silently**: when two parallel branches add migrations and resolve `_journal.json` conflicts, an entry can vanish. The `db:migrate` script applies based on what's in the journal, not what's on disk — silent skip if disk has more files than journal records. Mitigation: PR #11 added the missing entry; future agents should diff `ls drizzle/*.sql` vs journal entries before pushing.
+- **RLS policy authoring on pglite**: `TO authenticated` fails because pglite has no Supabase auth schema → role doesn't exist. Either omit the role (policies apply to PUBLIC) or guarantee the role is created before policies. We chose the former for consistency with 0001.
+- **Sub-agent parallelism**: stalls happen (~600s watchdog). Mitigation: prompts now mandate "commit every 10-15 min" with discrete commits per scope chunk. Saved Phase 2's 5-commit plan after a previous full-scope dispatch stalled mid-rebase.
+- **Background agent observability**: the `.output` file is the full JSONL transcript and overflows context if read directly. Safer signal: poll the agent's worktree git log for new commits + `grep` JSONL for tool-use counts and last text snippet.
+
+### Open follow-ups (tracked in TODO.md + risk register)
+
+- **DR-PROD-01** (block-prod-deploy): JWT `app_metadata.org_ids` sync via Supabase admin client + session invalidation on member removal.
+- **DR-PROD-04**: CI-04 migrate validation against ephemeral Postgres.
+- **DR-05** smoke test: needs DR-PROD-01 to be accurate.
+- **Issue #15**: tag history snapshot in `note_versions`.
+- **Phase 5**: search-ai-agent dispatch (FTS + AI summary endpoint).
+- **Phase 6**: files-logging-agent dispatch (Supabase Storage + signed URLs + audit log writers).
+- **Phase 7**: seed-agent (currently running in background, will produce ~10k notes against cloud DB once spec is reviewed).
+- Nav-click 404 assertion in screenshot harness.
 
 ---
 
