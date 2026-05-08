@@ -182,7 +182,6 @@ jobs:
     needs: install
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: hashFiles('Dockerfile') != ''
     steps:
       - name: Checkout
         uses: actions/checkout@v4
