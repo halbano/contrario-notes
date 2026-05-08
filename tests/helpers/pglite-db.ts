@@ -1,6 +1,8 @@
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
 import * as schema from '@/db/schema'
+import { memberships, organizations, users } from '@/db/schema'
+import type { Role } from '@/lib/request-context'
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 
@@ -43,5 +45,45 @@ export async function makeTestDb(): Promise<{ db: TestDb; close: () => Promise<v
     close: async () => {
       await pg.close()
     },
+  }
+}
+
+/**
+ * Seed organizations, users, and memberships for auth-flow tests.
+ *
+ * Lives next to `makeTestDb` so the auth-context test (and any future
+ * auth-flow integration test) can share a single fixture shape.
+ *
+ * `createdAt` is honored when supplied so tests can assert deterministic
+ * ordering (e.g. "oldest membership wins" in `getActiveMembershipFromDb`).
+ */
+export async function seedAuthFixtures(
+  db: TestDb,
+  fixtures: {
+    organizations?: { id: string; slug: string; name: string }[]
+    users?: { id: string; email: string; displayName?: string }[]
+    memberships?: {
+      orgId: string
+      userId: string
+      role: Role
+      createdAt?: Date
+    }[]
+  },
+): Promise<void> {
+  if (fixtures.organizations?.length) {
+    await db.insert(organizations).values(fixtures.organizations)
+  }
+  if (fixtures.users?.length) {
+    await db.insert(users).values(fixtures.users)
+  }
+  if (fixtures.memberships?.length) {
+    await db.insert(memberships).values(
+      fixtures.memberships.map((m) => ({
+        orgId: m.orgId,
+        userId: m.userId,
+        role: m.role,
+        ...(m.createdAt ? { createdAt: m.createdAt } : {}),
+      })),
+    )
   }
 }
