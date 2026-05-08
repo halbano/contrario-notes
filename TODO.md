@@ -55,11 +55,11 @@ Risk: HIGH / MEDIUM / LOW.
 
 ## Phase 3 — Auth + Orgs (auth-agent)
 
-- [ ] A-01 | P1 | HIGH | auth | Supabase auth wiring (server + client)
-- [ ] A-02 | P1 | HIGH | auth | Org create / list / switch endpoints
-- [ ] A-03 | P1 | HIGH | auth | Membership management (admin/member/viewer)
-- [ ] A-04 | P1 | HIGH | auth | Org-switching cache invalidation
-- [ ] A-05 | P1 | MEDIUM | auth | Auth event logging
+- [x] A-01 | P1 | HIGH | auth | Supabase auth wiring (server + client)
+- [x] A-02 | P1 | HIGH | auth | Org create / list / switch endpoints
+- [x] A-03 | P1 | HIGH | auth | Membership management (admin/member/viewer)
+- [x] A-04 | P1 | HIGH | auth | Org-switching cache invalidation
+- [x] A-05 | P1 | MEDIUM | auth | Auth event logging
 
 ## Phase 4 — Notes + versioning (notes-agent)
 

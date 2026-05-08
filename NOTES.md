@@ -101,10 +101,37 @@ Branch: `feat/foundation-architecture` — three commits, tree clean, **71/71 te
 | HIGH | Search visibility filtering must be SQL-level | search-ai-agent | open |
 | HIGH | AI summary context must respect user-visible notes only | search-ai-agent | open |
 | HIGH | Signed URL generation requires per-request permission check | files-logging-agent | open |
-| MEDIUM | Org switching cache invalidation | auth-agent | open |
+| MEDIUM | Org switching cache invalidation | auth-agent | resolved (`switchOrgAction` calls `revalidatePath('/', 'layout')`) |
 | MEDIUM | FTS performance at ~10k notes | search-ai-agent | open |
 | LOW | Migration ordering across worktrees (foundation owns 0000, others propose deltas) | orchestrator | open |
-| LOW | RLS not yet implemented (defense-in-depth gap) | auth-agent | open |
+| LOW | RLS not yet implemented (defense-in-depth gap) | auth-agent | resolved (`drizzle/0001_rls.sql` + RLS isolation harness) |
+
+## Auth flow (auth-agent)
+
+```text
+sign-up → users mirror row → sign-in (Supabase) → first-org check
+   → if zero memberships: createFirstOrgAction (writes org + admin membership + active-org cookie)
+   → else: getRequestContext() reads active-org cookie HINT, validates against memberships
+   → ctx (userId, orgId, role) → repos/services scoped to ctx → resource read/write
+```
+
+Active org is **server-side only** (`active_org` httpOnly cookie). The cookie
+is a *hint*: `getActiveMembershipFromDb` verifies the user holds a membership
+for that org and otherwise falls back to the deterministic default (oldest
+membership). Strict 404 path lives in `validateOrgSwitch` — invoked by
+`switchOrgAction` BEFORE the cookie is rewritten.
+
+Cache invalidation: `switchOrgAction` and `createFirstOrgAction` both call
+`revalidatePath('/', 'layout')` after the cookie write so the RSC tree is
+rebuilt with the new ctx.
+
+Defense-in-depth: `drizzle/0001_rls.sql` enables RLS on `notes`,
+`note_versions`, `tags`, `note_tags`, `files`, and `audit_log`. Policies key
+off the JWT claim `app_metadata.org_ids` (uuid[]). The org-switch endpoint
+keeps the JWT claim in sync (TODO once Supabase admin client is wired in
+Phase 4 — currently we rely on app-layer scoping; RLS is exercised by the
+isolation harness against pglite). Tests in `tests/rls-isolation.test.ts`
+impersonate a non-owner role and verify zero-row + WITH CHECK rejection.
 
 ## Confidence score (live, updated)
 
