@@ -40,11 +40,15 @@ export const ALLOWED_MIME_TYPES = new Set([
 /** Default TTL for signed reads. ADR-0005 caps at 5 min. */
 export const SIGNED_URL_TTL_SECONDS = 300
 
-function toPermissionView(n: DbNote): NoteForPermission {
+function toPermissionView(
+  n: DbNote,
+  sharedWithUserIds?: readonly string[],
+): NoteForPermission {
   return {
     orgId: n.orgId,
     authorId: n.authorId,
     visibility: n.visibility,
+    sharedWithUserIds,
   }
 }
 
@@ -116,6 +120,19 @@ export function createFilesService(
     return repos.notes.findById(file.noteId)
   }
 
+  /**
+   * Build the in-memory NoteForPermission projection. For `shared` notes
+   * we look up the explicit grants so `canReadNote` evaluates correctly.
+   */
+  async function permissionViewForNote(note: DbNote): Promise<NoteForPermission> {
+    if (note.visibility !== 'shared') return toPermissionView(note)
+    const grants = await repos.noteShares.listForNote(note.id)
+    return toPermissionView(
+      note,
+      grants.map((g) => g.userId),
+    )
+  }
+
   return {
     /**
      * Upload bytes + create the row.
@@ -157,7 +174,7 @@ export function createFilesService(
       let parentView: NoteForPermission | null = null
       if (input.noteId) {
         parentNote = await loadNoteOrThrow(input.noteId)
-        parentView = toPermissionView(parentNote)
+        parentView = await permissionViewForNote(parentNote)
       }
       if (!canAttachToNote(ctx, parentView)) {
         logger.log(LOG_EVENTS.PERMISSION_DENIED, {
@@ -235,7 +252,7 @@ export function createFilesService(
       const file = await repos.files.findById(fileId)
       if (!file) return null
       const parent = await fetchParentNote(file)
-      const parentView = parent ? toPermissionView(parent) : null
+      const parentView = parent ? await permissionViewForNote(parent) : null
       if (!canReadFile(ctx, toFilePermissionView(file, parentView), parentView)) {
         return null
       }
@@ -257,7 +274,7 @@ export function createFilesService(
       }
       for (const f of candidates) {
         const parent = f.noteId ? notesById.get(f.noteId) ?? null : null
-        const parentView = parent ? toPermissionView(parent) : null
+        const parentView = parent ? await permissionViewForNote(parent) : null
         if (canReadFile(ctx, toFilePermissionView(f, parentView), parentView)) {
           result.push(f)
         }
@@ -289,7 +306,7 @@ export function createFilesService(
         throw new AppError('not_found', 'File not found')
       }
       const parent = await fetchParentNote(file)
-      const parentView = parent ? toPermissionView(parent) : null
+      const parentView = parent ? await permissionViewForNote(parent) : null
       if (!canReadFile(ctx, toFilePermissionView(file, parentView), parentView)) {
         logger.log(LOG_EVENTS.PERMISSION_DENIED, {
           orgId: ctx.orgId,
@@ -332,7 +349,7 @@ export function createFilesService(
         throw new AppError('not_found', 'File not found')
       }
       const parent = await fetchParentNote(file)
-      const parentView = parent ? toPermissionView(parent) : null
+      const parentView = parent ? await permissionViewForNote(parent) : null
       if (!canWriteFile(ctx, toFilePermissionView(file, parentView), parentView)) {
         logger.log(LOG_EVENTS.PERMISSION_DENIED, {
           orgId: ctx.orgId,

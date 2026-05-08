@@ -471,3 +471,38 @@ Hard-fail conditions (any one → revert + post-mortem):
 - Confirmed cross-tenant leakage
 - Unsafe file access
 - AI accessing unauthorized data
+
+---
+
+## 2026-05-08 — files-logging slice landed
+
+### Files (ADR-0005)
+
+- Bucket: `note-files` (private, configurable via `SUPABASE_FILES_BUCKET`).
+  Create manually in Supabase dashboard → Storage → New bucket → uncheck
+  "Public bucket". Migrations cannot create buckets.
+- Object path scheme:
+  `org/<org_id>/note/<note_id>/<file_id>-<sanitized_filename>` or
+  `org/<org_id>/standalone/<file_id>-<filename>`.
+- Size cap v1: 10 MB (`FILES_MAX_BYTES`). MIME allowlist: png/jpeg/webp/svg,
+  pdf, plain text, markdown.
+- Signed URL TTL: 300 s (hard cap `MAX_SIGNED_URL_TTL_SECONDS`). Each
+  download mints a fresh URL after `canReadFile`. Path is not a credential.
+- Rollback semantics: row inserted first; on storage failure the row is
+  hard-deleted. Storage delete is non-blocking on remove; janitor reconciles.
+
+### Audit retention
+
+- `audit_log` is org-scoped, append-only. Pre-org-context auth events
+  (signin/signout/signup/password_reset_requested) flow through the
+  structured logger only — `audit_log.org_id` is NOT NULL.
+- Mutations writing audit_log: notes (created/updated/deleted/version_created),
+  files (uploaded/read/deleted), orgs (created/membership add/change_role/remove,
+  org_switch).
+- Retention: open question — recommend 1 year on row, 30 days hot, archived
+  to S3 quarterly. Decision deferred to ops.
+
+### Env / config
+
+- `SUPABASE_FILES_BUCKET` (optional, default `note-files`).
+- `FILES_MAX_BYTES` (optional, default 10 MB).
