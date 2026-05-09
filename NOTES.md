@@ -506,3 +506,26 @@ Hard-fail conditions (any one → revert + post-mortem):
 
 - `SUPABASE_FILES_BUCKET` (optional, default `note-files`).
 - `FILES_MAX_BYTES` (optional, default 10 MB).
+
+---
+
+## 2026-05-09 — VAL-01 / VAL-02 / VAL-09 fixed
+
+Manual cloud-Supabase walkthrough surfaced three UX gaps; all three landed in
+`feat/auth-followup-val-01-02-09`.
+
+- VAL-01 — `app/auth/callback/route.ts` exchanges Supabase auth codes for
+  sessions and redirects to a sanitised `redirectTo` (open-redirect guard:
+  same-origin absolute paths only). Failure path uniformly redirects to
+  `/sign-in?error=callback_failed`. `signUp` now passes `emailRedirectTo` and
+  `requestPasswordReset` passes `redirectTo` pointed at `/auth/callback`.
+- VAL-02 — `signUp` returns `{ ok, userId, sessionCreated }`; the action
+  surfaces `requiresEmailConfirmation` to the form when no session was
+  established (email-confirmation enabled). Sign-up form renders a
+  "Check your email" `EmptyState` with a `resendConfirmationAction`
+  (Supabase rate-limits at the tier; the action always returns `ok: true`).
+- VAL-09 — `lib/require-membership.ts` short-circuits the app-shell render:
+  on `no_membership` it redirects to `/onboarding/create-org`. New page
+  reuses `AuthCard` and submits to the existing `createFirstOrgAction`.
+  `OrgSwitcherSlot` updated to a "Create organization →" link as
+  defence-in-depth (should never render with zero memberships post-VAL-09).

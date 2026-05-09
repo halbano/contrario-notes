@@ -1,27 +1,39 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
+import { MailCheck } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ErrorState } from '@/components/states'
-import { signUpAction } from './auth-actions'
+import { ErrorState, EmptyState } from '@/components/states'
+import { resendConfirmationAction, signUpAction } from './auth-actions'
 import { signUpSchema, type AuthFieldErrors } from './auth-schemas'
 
-interface State {
-  pending: boolean
-  fieldErrors: AuthFieldErrors
-  formError: string | null
-}
+/**
+ * Sign-up form with confirmation-banner state machine (VAL-02).
+ *
+ * View states:
+ *   - `form`         — input fields, default landing.
+ *   - `confirmation` — Supabase returned `requiresEmailConfirmation: true`;
+ *                      show the "Check your email" card with Resend.
+ *
+ * Resend uses Supabase's tier-level rate-limit; we add a local 60-s cooldown
+ * so impatient clicks don't hammer Supabase.
+ */
+type View =
+  | { kind: 'form'; pending: boolean; fieldErrors: AuthFieldErrors; formError: string | null }
+  | { kind: 'confirmation'; email: string; resending: boolean; resentAt: number | null }
 
-const initialState: State = { pending: false, fieldErrors: {}, formError: null }
+const initialView: View = { kind: 'form', pending: false, fieldErrors: {}, formError: null }
 
 export function SignUpForm() {
-  const [state, setState] = React.useState<State>(initialState)
+  const [view, setView] = React.useState<View>(initialView)
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (view.kind !== 'form') return
     const form = e.currentTarget
     const formData = new FormData(form)
     const parsed = signUpSchema.safeParse({
@@ -30,38 +42,88 @@ export function SignUpForm() {
       confirmPassword: formData.get('confirmPassword'),
     })
     if (!parsed.success) {
-      setState({
+      setView({
+        kind: 'form',
         pending: false,
         fieldErrors: parsed.error.flatten().fieldErrors as AuthFieldErrors,
         formError: null,
       })
       return
     }
-    setState({ pending: true, fieldErrors: {}, formError: null })
+    setView({ kind: 'form', pending: true, fieldErrors: {}, formError: null })
     const result = await signUpAction(formData)
-    setState({
+    if (result.ok && result.requiresEmailConfirmation) {
+      setView({ kind: 'confirmation', email: parsed.data.email, resending: false, resentAt: null })
+      return
+    }
+    // result.ok === true with no `requiresEmailConfirmation` would already
+    // have been a server-side redirect. We only get here on failure.
+    setView({
+      kind: 'form',
       pending: false,
       fieldErrors: result.fieldErrors ?? {},
       formError: result.ok ? null : (result.message ?? 'Unable to create account.'),
     })
   }
 
-  const emailErr = state.fieldErrors.email?.[0]
-  const passwordErr = state.fieldErrors.password?.[0]
-  const confirmErr = state.fieldErrors.confirmPassword?.[0]
+  async function onResend() {
+    if (view.kind !== 'confirmation' || view.resending) return
+    setView({ ...view, resending: true })
+    const fd = new FormData()
+    fd.set('email', view.email)
+    await resendConfirmationAction(fd)
+    setView({ ...view, resending: false, resentAt: Date.now() })
+  }
+
+  if (view.kind === 'confirmation') {
+    return (
+      <EmptyState
+        icon={MailCheck}
+        title="Check your email."
+        description={`We sent a confirmation link to ${view.email}. Open it to finish setting up your account.`}
+        action={
+          <div className="flex flex-col items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onResend}
+              disabled={view.resending}
+              aria-live="polite"
+            >
+              {view.resending
+                ? 'Resending…'
+                : view.resentAt
+                  ? 'Confirmation re-sent'
+                  : 'Resend confirmation'}
+            </Button>
+            <Link
+              href="/sign-in"
+              className="text-small text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Back to sign in
+            </Link>
+          </div>
+        }
+      />
+    )
+  }
+
+  const emailErr = view.fieldErrors.email?.[0]
+  const passwordErr = view.fieldErrors.password?.[0]
+  const confirmErr = view.fieldErrors.confirmPassword?.[0]
 
   return (
     <form
       onSubmit={onSubmit}
       noValidate
       className="space-y-4"
-      aria-describedby={state.formError ? 'sign-up-form-error' : undefined}
+      aria-describedby={view.formError ? 'sign-up-form-error' : undefined}
     >
-      {state.formError ? (
+      {view.formError ? (
         <div id="sign-up-form-error">
           <ErrorState
             title="Sign-up unavailable"
-            description={state.formError}
+            description={view.formError}
           />
         </div>
       ) : null}
@@ -124,8 +186,8 @@ export function SignUpForm() {
         ) : null}
       </div>
 
-      <Button type="submit" className="w-full" disabled={state.pending}>
-        {state.pending ? 'Creating account…' : 'Create account'}
+      <Button type="submit" className="w-full" disabled={view.pending}>
+        {view.pending ? 'Creating account…' : 'Create account'}
       </Button>
     </form>
   )

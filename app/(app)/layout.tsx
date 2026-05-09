@@ -2,6 +2,7 @@ import * as React from 'react'
 
 import { TopBar } from '@/components/app-shell/top-bar'
 import { SideNav } from '@/components/app-shell/side-nav'
+import { requireMembershipOrRedirect } from '@/lib/require-membership'
 
 /**
  * Authenticated app shell layout.
@@ -10,11 +11,16 @@ import { SideNav } from '@/components/app-shell/side-nav'
  * - Persistent left side nav at >= md
  * - At < md the side nav collapses into a Sheet (see `MobileNav`)
  *
- * Auth gating is `auth-agent`'s responsibility; this layout assumes the user
- * is authenticated. TODO(auth-agent): redirect unauthenticated users to
- * `/sign-in` from a server-side check above this layout.
+ * Auth gating: middleware redirects fully-unauthenticated users to /sign-in.
+ * Here we additionally short-circuit "authenticated but no membership" by
+ * sending the orphan to `/onboarding/create-org` (VAL-09). Without this,
+ * such a user lands on the empty shell with no path forward.
  */
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  // Force-resolve membership before rendering. Throws no_membership →
+  // redirect to onboarding; rethrows unauthenticated → middleware handles.
+  await requireMembershipOrRedirect()
+
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <TopBar />

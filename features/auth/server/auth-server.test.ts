@@ -17,6 +17,7 @@ const resetMock = vi.fn()
 const signInMock = vi.fn()
 const signOutMock = vi.fn()
 const getUserMock = vi.fn()
+const signUpMock = vi.fn()
 
 vi.mock('@/lib/supabase/server', () => ({
   createSupabaseServerClient: async () => ({
@@ -25,6 +26,7 @@ vi.mock('@/lib/supabase/server', () => ({
       signInWithPassword: signInMock,
       signOut: signOutMock,
       getUser: getUserMock,
+      signUp: signUpMock,
     },
   }),
 }))
@@ -33,11 +35,29 @@ vi.mock('@/lib/active-org-cookie', () => ({
   clearActiveOrgCookie: async () => undefined,
 }))
 
+// `signUp` mirrors the auth user into our `users` table via `getDb()`. Stub
+// the db so we don't need a real Postgres in this unit-test file.
+vi.mock('@/db/client', () => ({
+  getDb: () => ({
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [],
+        }),
+      }),
+    }),
+    insert: () => ({
+      values: async () => undefined,
+    }),
+  }),
+}))
+
 beforeEach(() => {
   resetMock.mockReset()
   signInMock.mockReset()
   signOutMock.mockReset()
   getUserMock.mockReset()
+  signUpMock.mockReset()
 })
 
 afterEach(() => {
@@ -85,5 +105,66 @@ describe('signInWithPassword — does not distinguish unknown email vs wrong pas
     const { signInWithPassword } = await import('./auth-server')
     const out = await signInWithPassword({ email: 'no@x.com', password: 'wrong' })
     expect(out).toEqual({ ok: false, reason: 'invalid_credentials' })
+  })
+})
+
+describe('signUp — email confirmation surfacing (VAL-02)', () => {
+  it('returns sessionCreated:false when Supabase returns a user but no session (confirmation pending)', async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: { user: { id: 'u-1' }, session: null },
+      error: null,
+    })
+    const { signUp } = await import('./auth-server')
+    const out = await signUp({ email: 'new@example.com', password: 'Sup3rGood' })
+    expect(out).toEqual({ ok: true, userId: 'u-1', sessionCreated: false })
+  })
+
+  it('returns sessionCreated:true when Supabase returns both user and session (confirmation off)', async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: { user: { id: 'u-2' }, session: { access_token: 'tok' } },
+      error: null,
+    })
+    const { signUp } = await import('./auth-server')
+    const out = await signUp({ email: 'auto@example.com', password: 'Sup3rGood' })
+    expect(out).toEqual({ ok: true, userId: 'u-2', sessionCreated: true })
+  })
+})
+
+describe('signUp — passes emailRedirectTo when NEXT_PUBLIC_APP_URL is set (VAL-01)', () => {
+  it('forwards `emailRedirectTo` pointing at /auth/callback', async () => {
+    const prev = process.env.NEXT_PUBLIC_APP_URL
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.example.com'
+    signUpMock.mockResolvedValueOnce({
+      data: { user: { id: 'u-3' }, session: null },
+      error: null,
+    })
+    const { signUp } = await import('./auth-server')
+    await signUp({ email: 'cb@example.com', password: 'Sup3rGood' })
+
+    const call = signUpMock.mock.calls[0] as unknown as [
+      { email: string; password: string; options?: { emailRedirectTo?: string } },
+    ]
+    expect(call[0].options?.emailRedirectTo).toBe(
+      'https://app.example.com/auth/callback?redirectTo=%2F',
+    )
+    process.env.NEXT_PUBLIC_APP_URL = prev
+  })
+})
+
+describe('requestPasswordReset — points redirectTo at /auth/callback (VAL-01)', () => {
+  it('forwards redirectTo with type=recovery to the callback handler', async () => {
+    const prev = process.env.NEXT_PUBLIC_APP_URL
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.example.com'
+    resetMock.mockResolvedValueOnce({ data: {}, error: null })
+    const { requestPasswordReset } = await import('./auth-server')
+    await requestPasswordReset('user@example.com')
+    const call = resetMock.mock.calls[0] as unknown as [
+      string,
+      { redirectTo?: string } | undefined,
+    ]
+    expect(call[1]?.redirectTo).toBe(
+      'https://app.example.com/auth/callback?type=recovery&redirectTo=%2F',
+    )
+    process.env.NEXT_PUBLIC_APP_URL = prev
   })
 })
