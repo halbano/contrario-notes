@@ -130,3 +130,13 @@ Each box should be ticked here as the task lands.
 - [ ] DR-PROD-04 | P2 | MEDIUM | ci-quality-agent | CI-04 follow-up: spin up ephemeral Postgres in CI, apply all migrations in order, validate against snapshot. Closes the migrate-validation gap.
 - [ ] DR-PROD-05 | P2 | LOW | orchestrator | Document migration runbook in `docs/RUNBOOK.md`: stage vs prod application order, rollback strategy, on-call procedure if a migration corrupts data.
 - [ ] DR-PROD-06 | P2 | LOW | orchestrator | Add `pre-deploy` GitHub Action that diffs `drizzle/` vs target environment's applied migrations. Block deploys on un-applied migrations.
+
+## AI hardening follow-ups (PR #22 carry-over)
+
+Owner: search-ai-agent (followups) + orchestrator. Track risks called out in PR #22 review. Tick as each lands.
+
+- [ ] AI-01 | P2 | LOW | search-ai-agent (followup) | Real Anthropic API smoke. New `scripts/smoke-ai.ts` gated by `process.env.ANTHROPIC_API_KEY`; sends a 1-token request to verify shape + auth + model id. Runs manually after deploy or via opt-in CI job. Defer until first prod rollout.
+- [ ] AI-02 | P2 | MEDIUM | search-ai-agent (followup) | Distributed rate limiter. In-memory limiter allows `instances × limit` on multi-instance Railway. Swap to `@upstash/ratelimit` + Upstash Redis HTTP when a second instance is provisioned. ~10 LOC swap; `TODO(redis)` marker exists in code.
+- [ ] AI-03 | P1 | HIGH | search-ai-agent (followup) | Prompt-injection edge cases beyond fence-closure escape. Add unit tests in `services/ai-service.test.ts` for: nested CDATA payloads, control-character splices (`\x00`, `\x1b`, zero-width), instruction-override via the `<UNTRUSTED_NOTE>` block (assert system prompt's "ignore in-content directives" rule survives), and length truncation (notes > 100k chars truncated at the prompt builder, not the LLM). Sub-1-day work.
+- [ ] AI-04 | P2 | LOW | search-ai-agent (followup) | Golden-output AI quality tests. Opt-in suite gated by `ANTHROPIC_API_KEY` that asserts representative summary outputs against snapshots. Defer until prompt is stable enough that drift matters.
+- [ ] AI-05 | P1 | LOW | search-ai-agent (followup) | Wire AI events into `services.audit`. `LOG_EVENTS.AI_*` already pipe through the structured logger; add `services.audit.record(...)` calls in `ai-service.ts` for `ai.summary_requested`, `ai.summary_completed`, `ai.summary_failed`. **Blocks on PR #21 (files+audit infra) merge.** ~20 LOC follow-up commit.
