@@ -47,6 +47,7 @@ function makeRepos(): Repositories {
       findById: vi.fn(),
       listRecent: vi.fn(),
       listVisible: vi.fn(),
+      findVisibleByIds: vi.fn(async () => []),
       create: vi.fn(),
       update: vi.fn(),
       softDelete: vi.fn(),
@@ -102,6 +103,9 @@ function makeRepos(): Repositories {
     auditLog: {
       record: vi.fn(async () => ({}) as never),
       listRecent: vi.fn(async () => []),
+    },
+    search: {
+      searchVisible: vi.fn(async () => []),
     },
     db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
   }

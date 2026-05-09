@@ -19,6 +19,7 @@ function makeNote(overrides: Partial<DbNote> = {}): DbNote {
     content: 'c',
     visibility: 'org',
     tagsText: '',
+    searchTsv: null,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
     deletedAt: null,
@@ -33,6 +34,9 @@ function makeRepos(initialNote: DbNote | null) {
       findById: vi.fn(async (_id: string) => store),
       listRecent: vi.fn(async () => (store ? [store] : [])),
       listVisible: vi.fn(async () => (store ? [store] : [])),
+      findVisibleByIds: vi.fn(async (ids: string[]) =>
+        store && ids.includes(store.id) ? [store] : [],
+      ),
       create: vi.fn(async (input) => {
         store = makeNote({ ...input, orgId: ORG, id: 'n-new' })
         return store
@@ -108,6 +112,9 @@ function makeRepos(initialNote: DbNote | null) {
     auditLog: {
       record: vi.fn(async () => ({}) as never),
       listRecent: vi.fn(async () => []),
+    },
+    search: {
+      searchVisible: vi.fn(async () => []),
     },
     // The unit tests don't drive the transactional path; provide a stub
     // that simply runs the callback against the same fake handle.

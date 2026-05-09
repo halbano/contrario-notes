@@ -30,6 +30,7 @@ function makeNote(overrides: Partial<DbNote> = {}): DbNote {
     content: 'c',
     visibility: 'org',
     tagsText: '',
+    searchTsv: null,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
     deletedAt: null,
@@ -95,6 +96,7 @@ function makeRepos(opts: {
       }),
       listRecent: vi.fn(async () => []),
       listVisible: vi.fn(async () => []),
+      findVisibleByIds: vi.fn(async () => []),
       create: vi.fn(),
       update: vi.fn(),
       softDelete: vi.fn(async () => false),
@@ -164,6 +166,9 @@ function makeRepos(opts: {
     auditLog: {
       record: vi.fn(async () => ({}) as never),
       listRecent: vi.fn(async () => []),
+    },
+    search: {
+      searchVisible: vi.fn(async () => []),
     },
     db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
   }

@@ -127,6 +127,21 @@ export function createNotesService(
     },
 
     /**
+     * Resolve a list of note ids to the user-visible subset. Forbidden ids
+     * (cross-org, private notes the user does not own, ungranted shared
+     * notes) are silently dropped — the SQL predicate is the only filter.
+     *
+     * Same code path UI lists use (visibleNotesPredicate). Used by the AI
+     * summary service (ADR-0006) for permission-safe context loading.
+     */
+    async findVisibleByIds(ids: string[]): Promise<DbNote[]> {
+      if (ids.length === 0) return []
+      // De-dup at the boundary so the IN-list stays minimal.
+      const unique = Array.from(new Set(ids))
+      return repos.notes.findVisibleByIds(unique)
+    },
+
+    /**
      * Legacy create — preserved for callers that don't yet need a version
      * row. New write paths go through `createWithVersion`.
      */
