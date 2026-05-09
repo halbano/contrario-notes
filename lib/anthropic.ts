@@ -11,7 +11,14 @@
  * client component.
  */
 
-import 'server-only'
+// Runtime fence equivalent to `import 'server-only'` but compatible with
+// non-Next runtimes (tsx for the seed script, vitest, etc). The intent is
+// identical: refuse to be evaluated in the browser.
+if (typeof window !== 'undefined') {
+  throw new Error(
+    'lib/anthropic.ts is server-only. Do not import it from a client component.',
+  )
+}
 import Anthropic from '@anthropic-ai/sdk'
 
 export type AnthropicClient = {
