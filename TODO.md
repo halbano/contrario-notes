@@ -140,3 +140,24 @@ Owner: search-ai-agent (followups) + orchestrator. Track risks called out in PR 
 - [ ] AI-03 | P1 | HIGH | search-ai-agent (followup) | Prompt-injection edge cases beyond fence-closure escape. Add unit tests in `services/ai-service.test.ts` for: nested CDATA payloads, control-character splices (`\x00`, `\x1b`, zero-width), instruction-override via the `<UNTRUSTED_NOTE>` block (assert system prompt's "ignore in-content directives" rule survives), and length truncation (notes > 100k chars truncated at the prompt builder, not the LLM). Sub-1-day work.
 - [ ] AI-04 | P2 | LOW | search-ai-agent (followup) | Golden-output AI quality tests. Opt-in suite gated by `ANTHROPIC_API_KEY` that asserts representative summary outputs against snapshots. Defer until prompt is stable enough that drift matters.
 - [ ] AI-05 | P1 | LOW | search-ai-agent (followup) | Wire AI events into `services.audit`. `LOG_EVENTS.AI_*` already pipe through the structured logger; add `services.audit.record(...)` calls in `ai-service.ts` for `ai.summary_requested`, `ai.summary_completed`, `ai.summary_failed`. **Blocks on PR #21 (files+audit infra) merge.** ~20 LOC follow-up commit.
+
+## Validation findings (manual walkthrough against cloud Supabase, 2026-05-09)
+
+Surfaced while clicking through real auth flow + first navigation. Each is a discrete fix; pick + dispatch independently.
+
+### Auth flow
+
+- [ ] VAL-01 | P0 | **HIGH** | auth-agent (followup) | **Missing `/auth/callback` route.** Supabase confirmation/recovery email links land on `/sign-in?code=...&redirectTo=%2F`. The sign-in page never exchanges the code → session never established → unhandled webpack error on render. Fix: add `app/auth/callback/route.ts` that calls `supabase.auth.exchangeCodeForSession(code)` then redirects to `redirectTo` (default `/`). Also update `signUp` and `requestPasswordReset` to pass `options.emailRedirectTo: ${APP_URL}/auth/callback` so the email link points there.
+- [ ] VAL-02 | P0 | MEDIUM | auth-agent (followup) | **Sign-up gives no feedback when email confirmation is required.** When Supabase returns `data.user` but no `data.session`, `signUpAction` still `redirect('/')` → middleware bounces back to `/sign-in` → user has no idea why. Fix: extend `AuthResult` with `sessionCreated: boolean`. In the action: if `!sessionCreated`, return `{ ok: true, requiresEmailConfirmation: true }` (no redirect). In `sign-up-form.tsx`: show a success card "Check your email to confirm your account" + "Resend" button (rate-limited). Same fix logic for the password-reset success state.
+- [ ] VAL-03 | P2 | LOW | auth-agent (followup) | `requestPasswordReset` (`features/auth/server/auth-server.ts:96`) currently sets `redirectTo: ${APP_URL}/sign-in` — same bug pattern. Update to `/auth/callback?type=recovery` once VAL-01 lands.
+- [ ] VAL-04 | P2 | LOW | auth-agent (followup) | Sign-up: option to disable Supabase email confirmation in the dashboard for dev to make iteration faster. Document in `docs/SUPABASE_SETUP.md` (create if missing). Production must keep it on.
+
+### Cloud DB state
+
+- [ ] VAL-05 | P0 | LOW | orchestrator | **Cloud DB has no seed data.** Seed-agent ran in CI/local only. Run `SEED_PROFILE=small npm run seed -- --i-know-this-is-cloud` against cloud `DATABASE_URL` to populate orgs/users/notes for end-to-end testing. (Cloud guard already in place at `scripts/seed/lib/cloud-guard.ts`.) Decision needed: small (100 notes, fast iteration) vs full (10k notes, scale validation).
+- [ ] VAL-06 | P1 | LOW | orchestrator | DR-05 cloud RLS smoke test — sign up two real users in two orgs, write notes in each, confirm cross-org reads return 404. Validates RLS round-trip in real Postgres beyond pglite. Blocked on VAL-01 + VAL-05.
+
+### Dev environment hygiene
+
+- [ ] VAL-07 | P2 | LOW | orchestrator | Document `rm -rf .next && npm run dev` workflow in README — webpack caches stale state across big multi-PR merges (observed twice). Either as a doc note or a one-line `npm run dev:clean` script.
+- [ ] VAL-08 | P2 | LOW | orchestrator | Sign-up form's "Create account" button has no rate limit. Brute-force protection lives at Supabase tier (per-IP), but worth confirming defaults + adding a note in `docs/SUPABASE_SETUP.md`.
