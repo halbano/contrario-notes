@@ -44,3 +44,4 @@ yarn-error.log*
 
 # drizzle generated migration metadata is committed; only ignore the snapshot lock if needed
 # (no path here — keep migrations under source control)
+.smoke/
