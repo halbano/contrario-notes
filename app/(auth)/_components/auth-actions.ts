@@ -24,6 +24,7 @@ import {
 } from './auth-schemas'
 import {
   requestPasswordReset as requestPasswordResetServer,
+  resendSignupConfirmation,
   signInWithPassword,
   signOut,
   signUp as signUpServer,
@@ -69,7 +70,33 @@ export async function signUpAction(formData: FormData): Promise<AuthActionResult
     }
     return { ok: false, message: 'Unable to create account.' }
   }
+  // Email-confirmation enabled: Supabase returned a user but no session.
+  // Surface a result the form can render — do NOT redirect, since `/` would
+  // bounce back through middleware → /sign-in for an unauthenticated user.
+  if (result.sessionCreated === false) {
+    return { ok: true, requiresEmailConfirmation: true }
+  }
   redirect('/')
+}
+
+/**
+ * Resend the sign-up confirmation email (VAL-02).
+ *
+ * Always returns `{ ok: true }`. We silently drop malformed emails rather
+ * than surfacing field errors — leaking validation results would let an
+ * attacker probe whether `not-an-email`-style input was rejected at the
+ * client or the server.
+ */
+export async function resendConfirmationAction(formData: FormData): Promise<AuthActionResult> {
+  const parsed = forgotPasswordSchema.safeParse({
+    email: formData.get('email'),
+  })
+  if (!parsed.success) {
+    // Uniform success — do not leak validation failure.
+    return { ok: true }
+  }
+  await resendSignupConfirmation(parsed.data.email)
+  return { ok: true }
 }
 
 export async function requestPasswordReset(

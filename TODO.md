@@ -131,6 +131,15 @@ Each box should be ticked here as the task lands.
 - [ ] DR-PROD-05 | P2 | LOW | orchestrator | Document migration runbook in `docs/RUNBOOK.md`: stage vs prod application order, rollback strategy, on-call procedure if a migration corrupts data.
 - [ ] DR-PROD-06 | P2 | LOW | orchestrator | Add `pre-deploy` GitHub Action that diffs `drizzle/` vs target environment's applied migrations. Block deploys on un-applied migrations.
 
+## Validation findings (cloud Supabase walkthrough — 2026-05-09)
+
+User-driven manual walkthrough surfaced UX gaps after auth + RLS landed in cloud.
+Tracked here as VAL-XX entries; severity flagged inline.
+
+- [x] VAL-01 | P0 | HIGH | auth-agent (followup) | `/auth/callback` route handler — exchanges Supabase code for session and redirects (`exchangeCodeForSession`). `signUp` and `requestPasswordReset` must pass `emailRedirectTo` / `redirectTo` pointed at this callback. Without it, magic-link / confirmation / recovery clicks land on a 404.
+- [x] VAL-02 | P0 | MEDIUM | auth-agent (followup) | Sign-up email-confirmation success banner. When Supabase returns a user but no session (email-confirmation enabled), the form must render a "Check your email" view with a Resend action; today it silently redirects to `/` and the user is bounced back to `/sign-in` because the cookie was never set.
+- [x] VAL-09 | P1 | MEDIUM | auth-agent (followup) | Org-create CTA when zero memberships. Authenticated user with no membership currently lands on the app shell with a disabled "No organization" pill and no path forward. Layout must redirect orphans to `/onboarding/create-org`; org-switcher fallback link kept as defense-in-depth.
+
 ## AI hardening follow-ups (PR #22 carry-over)
 
 Owner: search-ai-agent (followups) + orchestrator. Track risks called out in PR #22 review. Tick as each lands.

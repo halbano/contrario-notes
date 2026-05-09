@@ -40,4 +40,11 @@ export interface AuthActionResult {
   ok: boolean
   message?: string
   fieldErrors?: AuthFieldErrors
+  /**
+   * Set on a successful sign-up when Supabase email-confirmation is enabled
+   * (no session is established until the user clicks the confirmation link).
+   * The form uses this to render the "Check your email" view instead of
+   * navigating away (VAL-02).
+   */
+  requiresEmailConfirmation?: boolean
 }
