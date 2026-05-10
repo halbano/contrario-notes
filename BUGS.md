@@ -31,7 +31,115 @@ shipped to a production environment.
 
 ## Open
 
-*(none)*
+### BUG-0015 — AI rate limiter is in-memory, breaks under multi-instance deploy
+
+- Reported: 2026-05-09 (search-ai-agent open question, surfaced during PR #22 review)
+- Severity: medium
+- Surface: `services/ai-rate-limiter.ts`.
+- Repro: deploy app to Railway with N>1 instances. Each instance has its
+  own counter map. A user can hit the per-user 10/min cap on every
+  instance independently → effective limit becomes 10×N.
+- Root cause: deliberate v1 simplification; in-code TODO marks
+  `TODO(redis)`.
+- Fix: pending. Plan: switch limiter to Redis (Upstash or self-hosted).
+  Keys: `rl:user:<userId>:<window>` and `rl:org:<orgId>:<window>`.
+  Atomic INCR + EXPIRE.
+- Prevention: opt-in distributed-test that runs against a Redis
+  container; add to CI when first multi-instance Railway deploy
+  happens.
+
+### BUG-0016 — `audit_log` retention not enforced
+
+- Reported: 2026-05-09 (files-logging-agent open question, surfaced during PR #21 review)
+- Severity: low
+- Surface: `audit_log` table.
+- Repro: long-running prod will accumulate audit rows indefinitely.
+  Storage cost + query latency degrade.
+- Root cause: no retention policy authored.
+- Fix: pending. Plan: quarterly archive job that copies old rows to
+  cold storage + DELETEs from `audit_log`. Retention TBD by ops
+  (default suggestion: 90 days hot, 1 year cold).
+- Prevention: cron job + monitoring alert at >X rows.
+
+### BUG-0017 — Storage `note-files` bucket cannot be created from SQL
+
+- Reported: 2026-05-09 (files-logging-agent open question)
+- Severity: low
+- Surface: deployment runbook.
+- Repro: fresh Supabase project. Run `npm run db:migrate` — works. Run
+  app, try to upload a file → error: bucket `note-files` does not
+  exist.
+- Root cause: Supabase Storage bucket creation is not exposed via SQL
+  DDL; must be done via Supabase dashboard or REST API.
+- Fix: documented as a manual step in `docs/RUNBOOK.md` (PR #21).
+  Could be automated via a one-shot script using the admin client.
+- Prevention: add a `scripts/setup-supabase.ts` that idempotently
+  provisions buckets, JWT expiry, and any other dashboard-only
+  settings; runbook checklist references it.
+
+### BUG-0018 — Pre-org-context auth events skip the audit trail
+
+- Reported: 2026-05-09 (files-logging-agent open question)
+- Severity: low
+- Surface: `audit_log` coverage for `auth.signin`, `auth.signin_failed`,
+  `auth.signout`, `auth.password_reset_requested`, `auth.signup`.
+- Repro: failed sign-in attempts (or successful ones before first-org
+  bootstrap) emit structured logs to stdout but write no `audit_log`
+  row.
+- Root cause: `audit_log.org_id` is `NOT NULL`. Pre-org events have no
+  org context to attribute.
+- Fix: pending. Plan options:
+  - **A** Relax `audit_log.org_id` to nullable + add a partial index
+    for queries that filter by org_id.
+  - **B** Separate `auth_audit_log` table (no org_id). Cleaner schema
+    but doubles the audit query surface.
+- Recommendation: **A** with a CHECK constraint enforcing `org_id IS
+  NOT NULL` for non-auth events. Migration
+  `drizzle/0007_audit_log_nullable_org.sql`.
+- Prevention: tenant-isolation test asserting rows with `org_id IS
+  NULL` are restricted to the auth event taxonomy.
+
+### BUG-0019 — Tag history not snapshotted in `note_versions`
+
+- Reported: 2026-05-08 (Copilot review on PR #14)
+- Severity: low
+- Surface: `services.notes.diffVersions` tags slice.
+- Repro: create a note with tags `[a, b]` (v=1). Update tags to
+  `[a, c]` (v=2). Call `diffVersions(noteId, v1, v2)`. The `tags`
+  slice falls back to current attachments and reports
+  `{ added: [], removed: [] }` instead of
+  `{ added: ['c'], removed: ['b'] }`.
+- Root cause: `note_versions` snapshots only `title` + `content`. Tag
+  changes mutate `note_tags` join rows in place (no version trail).
+- Fix: pending. Tracked as **issue #15**. Plan: add `tags_snapshot
+  text[]` column on `note_versions`, populate on `createVersion`.
+  Migration + service extension.
+- Prevention: pglite isolation test extension once schema lands.
+
+### BUG-0020 — JWT propagation latency on `addMember` / first-org create
+
+- Reported: 2026-05-09 (auth-agent DR-PROD-01 open question, surfaced during PR #20)
+- Severity: medium
+- Surface: any flow where a user gains a new `org_id`.
+- Repro: user A is added to org B by an admin. A's existing access
+  token still encodes `org_ids = [orgA]`. RLS denies queries against
+  orgB rows until A's JWT refreshes (default 1h, recommended 15min in
+  `RUNBOOK.md`).
+- Root cause: `auth.admin.updateUserById({ app_metadata })` updates
+  the database row but does NOT push a new token to the user's
+  browser. New claim is picked up on next refresh.
+- Fix: pending. Plan options:
+  - **A** Set JWT expiry to 900s in Supabase dashboard (DR-PROD-02 —
+    runbook step).
+  - **B** Force a client-side refresh after the admin action
+    (`supabase.auth.refreshSession()`).
+  - **C** Server-side: `auth.admin.signOut(userId, 'global')` after
+    every membership change (already done for `removeMember`; could
+    extend to `addMember`).
+- Recommendation: **A + B**. Don't apply C to `addMember` (kicks the
+  user out unnecessarily).
+- Prevention: load-test once real Supabase JWT expiry set; document
+  worst-case window in runbook.
 
 ---
 
