@@ -13,6 +13,9 @@ export default defineConfig({
       'services/**/*.test.ts',
       'features/**/*.test.ts',
       'tests/**/*.test.ts',
+      // VAL-13: component-level tests for the onboarding shell live next
+      // to the components they cover so they travel with the code.
+      'app/**/*.test.{ts,tsx}',
     ],
     exclude: ['node_modules/**', '.next/**', 'drizzle/**'],
     env: {

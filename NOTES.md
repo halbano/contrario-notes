@@ -626,3 +626,55 @@ items remain open as **block-prod-deploy**, not block-evaluation:
   against real prod-like environment.
 - VAL-11 — `createFirstOrgAction` FK self-heal: dev-only (orphan
   auth.users from `seed --reset`); not reproducible in clean prod.
+
+---
+
+## 2026-05-09 — VAL-11 + VAL-13 (auth-followup)
+
+### VAL-11 — `createFirstOrgAction` self-heal (P1 HIGH)
+
+`memberships.user_id → users.id` FK was tripping for users whose
+`public.users` mirror had been wiped (dev `seed --reset` cascade leaves
+`auth.users` orphaned). The brand-new user got stuck with no membership,
+no org, no path forward.
+
+Fix: `OrgsRepository.createWithAdmin` now accepts an optional
+`selfHealUserEmail`. When supplied, it runs `INSERT INTO users (id, email)
+... ON CONFLICT (id) DO NOTHING` inside the SAME transaction as the org +
+membership writes. Idempotent — existing rows are left untouched.
+`createFirstOrgAction` is the only caller that passes the email
+(threaded from `supabase.auth.getUser()`). The service-layer `createOrg`
+path is unchanged: an existing-member already has a `users` mirror by
+definition, so self-heal is unnecessary there.
+
+Tests use pglite (real Postgres FK enforcement, not mocks) so the bug
+would actually reproduce without the fix. Coverage: orphan creates org +
+membership (no FK error), idempotent on existing mirror (no overwrite),
+strict default still FK-fails without `selfHealUserEmail` (regression
+guard), and a unit-style assertion that `createFirstOrgAction` forwards
+`user.email` to the repo.
+
+### VAL-13 — Onboarding nav + Sign out (P1 MEDIUM)
+
+`/onboarding/create-org` previously rendered the form on a logo-only
+header. An authenticated user with no membership had no way to sign out
+or change accounts — bad UX, dead-end if anything went wrong (e.g. the
+VAL-11 FK error).
+
+Fix: new `OnboardingTopBar` component renders Logo on the left and
+"Signed in as `<email>`" + an account dropdown with **Sign out** on the
+right. Sign-out posts to the existing `signOutAction` (already tested,
+already redirects to `/sign-in`). No side nav, no org switcher — orphan
+state has nowhere to navigate. Visual tier matches `AuthCard`: calm
+background, soft `border-border/50`, no sticky/blur backdrop.
+
+The sign-out form is duplicated as a visually-hidden `<form
+className="sr-only">` so a keyboard / no-JS / portal-glitch user can
+still escape; the dropdown is the primary affordance, the hidden form
+is defence-in-depth.
+
+### Why these two together
+
+VAL-11 and VAL-13 are siblings: VAL-11 fixes the FK error itself, VAL-13
+ensures that if any error like it ever surfaces again, the user has a
+visible escape hatch instead of being stranded.
