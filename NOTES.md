@@ -529,3 +529,100 @@ Manual cloud-Supabase walkthrough surfaced three UX gaps; all three landed in
   reuses `AuthCard` and submits to the existing `createFirstOrgAction`.
   `OrgSwitcherSlot` updated to a "Create organization →" link as
   defence-in-depth (should never render with zero memberships post-VAL-09).
+
+---
+
+## 2026-05-09 — Wrap-up state (deliverable handoff)
+
+Final orchestrator pass before submission. No new code; documentation audit
++ four deliverable docs rewritten (`AI_USAGE.md`, `BUGS.md`, `REVIEW.md`,
+this entry in `NOTES.md`).
+
+### Confidence score (final)
+
+| Area | Weight | Score (0-1) | Weighted |
+|---|---|---|---|
+| Tenant isolation | 40 | 0.88 | 35.2 |
+| Permission enforcement | 20 | 0.85 | 17.0 |
+| Feature completeness | 20 | 0.75 | 15.0 |
+| Review discipline | 10 | 0.85 | 8.5 |
+| Observability | 10 | 0.70 | 7.0 |
+
+**Total: 82.7 / 100**. Up from 74.5 after #21 (files + audit), #22 (search
++ AI), #20 (jwt-sync), #28 (auth callback + onboarding). Hard-fail
+conditions still NONE confirmed.
+
+Drivers since last update:
+
+- **Tenant isolation 0.85 → 0.88**: search FTS query reuses the same SQL
+  visibility predicate as `listVisible` (`permissions/note-visibility-sql.ts`);
+  AI summary route filters note ids through that predicate before the
+  prompt is built. Files service gates downloads by `canReadFile` per
+  request. Audit log writers wired across notes / orgs / files.
+- **Permission enforcement 0.80 → 0.85**: `services.audit` writers added
+  for every mutation surface; share grant cross-org symmetry test added in
+  PR #14 polish; file permissions use parent-note share gating.
+- **Feature completeness 0.50 → 0.75**: notes + search + AI + files all
+  end-to-end functional against real Supabase. Onboarding/create-org +
+  email-confirmation flow round-tripped manually 2026-05-09.
+- **Review discipline 0.80 → 0.85**: 21 merged PRs over ~3 days, all with
+  risk labels + Copilot-review responses + conflict-resolution discipline.
+- **Observability 0.65 → 0.70**: `audit_log` writes on every mutation;
+  AI events logged with prompt hash. Sinks still stdout-only — no
+  aggregation pipeline.
+
+### What is complete
+
+- All 9 schema tables under RLS (`0001_rls.sql`, `0003_rls_note_shares.sql`).
+- All 4 SQL migrations registered in journal, applied to cloud DB
+  (verified hashes match repo).
+- Auth: signin / signup / signout / reset / email-confirmation /
+  callback / onboarding / org create / switch / membership management.
+- Notes: CRUD + tags + shares + versions + diff UI.
+- Search: FTS migration + visibility-filtered SQL query + UI.
+- AI: permission-safe context builder + summarize service + review-before-
+  accept UI + in-memory rate limiter + audit log writers.
+- Files: upload + signed-URL download + delete + audit log writers, with
+  parent-note share gating.
+- Audit: writers across notes / orgs / files services.
+- CI: lint + typecheck + test + build + Docker validation.
+- 13 PRs merged before validation walkthrough; 8 follow-up PRs
+  (#16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29).
+
+### What is known-unfinished (deferred with rationale)
+
+| ID | Area | Why deferred |
+|---|---|---|
+| DR-PROD-01 / DR-PROD-02 / DR-PROD-03 | JWT app_metadata.org_ids sync, short JWT expiry, force-signout on member removal | Wired in PR #20. **Not exercised against a real prod-like environment.** Block prod deploy on real-environment validation. |
+| DR-PROD-04 / CI-04 | CI migration validation against ephemeral Postgres | Out-of-scope for this slice (needs CI secret + service container). |
+| DR-PROD-05 / DR-PROD-06 | Migration runbook + pre-deploy diff Action | Operational, not blocking. |
+| DR-05 / VAL-06 | End-to-end cloud RLS smoke (two real users in two orgs) | Pending — needs a deliberate two-account session. |
+| AI-01 .. AI-05 | Real Anthropic smoke, distributed rate limiter, prompt-injection edge cases, golden outputs, audit wiring | All TODOs queued; none are deploy-blockers individually. AI-03 (prompt-injection edge cases) is the most security-relevant. |
+| N-FOLLOW-01 | Tag history snapshot in `note_versions` | Polish; issue #15. |
+| VAL-05 | Cloud DB seed | Operational (one-shot script run); guard already in place. |
+| VAL-10 / VAL-12 / VAL-11 / VAL-13 | Orphan auth-user cleanup, seed reset auth-user parity, createFirstOrg self-heal, onboarding nav | Tracked; not yet dispatched. VAL-11 is the only remaining HIGH (FK violation reproducible in dev only). |
+
+### What is deferred and why
+
+- **Distributed rate-limiter (AI-02)**: in-memory limiter is multi-instance
+  unsafe; Railway currently runs single-instance. `TODO(redis)` marker in
+  `services/ai-rate-limiter.ts:4`.
+- **Performance validation at 10k notes**: FTS scaffolded with GIN index;
+  never load-tested. Acceptable for evaluation, not for production.
+- **Observability aggregation**: structured logger writes JSON to stdout;
+  no sink pipeline (Datadog / Loki / etc.) wired.
+- **E2E Playwright auth flow against real Supabase**: only manual
+  walkthrough done (which surfaced VAL-01..13). Worth budgeting before
+  prod.
+
+### Risk register status (cross-checked vs. live table above)
+
+All HIGH risks from bootstrap closed by SQL-level predicate (PR #9),
+RLS migrations (PR #8 + #11 + #13), files-service per-request `canReadFile`
+gating (PR #21), and AI permission-safe context builder (PR #22). Two HIGH
+items remain open as **block-prod-deploy**, not block-evaluation:
+
+- DR-PROD-01 — JWT claim sync: code shipped in PR #20; not exercised
+  against real prod-like environment.
+- VAL-11 — `createFirstOrgAction` FK self-heal: dev-only (orphan
+  auth.users from `seed --reset`); not reproducible in clean prod.
