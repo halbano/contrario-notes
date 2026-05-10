@@ -62,7 +62,15 @@ export async function createFirstOrgAction(formData: FormData): Promise<OrgActio
   })
   const repo = createOrgsRepository(ctx, getDb() as never)
   try {
-    const org = await repo.createWithAdmin({ slug, name })
+    // VAL-11: pass the Supabase email so the repo can self-heal the
+    // public.users mirror in the same transaction if it was wiped (dev
+    // `seed --reset` cascade can leave auth.users orphaned). Idempotent —
+    // ON CONFLICT DO NOTHING leaves an existing mirror untouched.
+    const org = await repo.createWithAdmin({
+      slug,
+      name,
+      selfHealUserEmail: user.email ?? undefined,
+    })
     // DR-PROD-01: this path bypasses orgs-service so the JWT-sync there
     // doesn't fire automatically. Sync explicitly so RLS recognises the
     // brand-new org on the user's next request.

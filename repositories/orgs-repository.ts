@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { memberships, organizations, type DbOrganization } from '@/db/schema'
+import { memberships, organizations, users, type DbOrganization } from '@/db/schema'
 import type { AnyDb } from './notes-repository'
 import type { RequestContext } from './types'
 
@@ -26,8 +26,20 @@ export type OrgsRepository = {
    * is the brand-new org id (i.e. NOT `ctx.orgId`). It is the only legal
    * place this happens, because the `organizations` table is the tenant root
    * and the new org has, by definition, no current ctx yet.
+   *
+   * VAL-11 self-heal: when `selfHealUserEmail` is supplied, we first run
+   * `INSERT INTO users (id, email) ... ON CONFLICT (id) DO NOTHING` so the
+   * subsequent membership insert never trips the
+   * `memberships.user_id → users.id` FK. This is intended for the
+   * "first-org" flow where `auth.users` may exist but the `public.users`
+   * mirror was wiped (dev `seed --reset` cascade). The insert is idempotent;
+   * existing rows are left untouched.
    */
-  createWithAdmin(input: { slug: string; name: string }): Promise<DbOrganization>
+  createWithAdmin(input: {
+    slug: string
+    name: string
+    selfHealUserEmail?: string
+  }): Promise<DbOrganization>
 }
 
 export function createOrgsRepository(ctx: RequestContext, db: AnyDb): OrgsRepository {
@@ -54,9 +66,20 @@ export function createOrgsRepository(ctx: RequestContext, db: AnyDb): OrgsReposi
         .where(eq(memberships.userId, ctx.userId))
     },
 
-    async createWithAdmin({ slug, name }) {
+    async createWithAdmin({ slug, name, selfHealUserEmail }) {
       // Drizzle's `transaction` works for both postgres-js and pglite drivers.
       return db.transaction(async (tx) => {
+        // VAL-11: self-heal the public.users mirror BEFORE the membership
+        // write, so a wiped mirror (seed --reset cascade) can't FK-fail the
+        // membership insert. Idempotent — ON CONFLICT DO NOTHING leaves any
+        // existing row untouched, no double-write risk.
+        if (selfHealUserEmail) {
+          await tx
+            .insert(users)
+            .values({ id: ctx.userId, email: selfHealUserEmail })
+            .onConflictDoNothing({ target: users.id })
+        }
+
         const inserted = await tx
           .insert(organizations)
           .values({ slug, name })

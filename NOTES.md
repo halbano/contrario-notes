@@ -529,3 +529,152 @@ Manual cloud-Supabase walkthrough surfaced three UX gaps; all three landed in
   reuses `AuthCard` and submits to the existing `createFirstOrgAction`.
   `OrgSwitcherSlot` updated to a "Create organization →" link as
   defence-in-depth (should never render with zero memberships post-VAL-09).
+
+---
+
+## 2026-05-09 — Wrap-up state (deliverable handoff)
+
+Final orchestrator pass before submission. No new code; documentation audit
++ four deliverable docs rewritten (`AI_USAGE.md`, `BUGS.md`, `REVIEW.md`,
+this entry in `NOTES.md`).
+
+### Confidence score (final)
+
+| Area | Weight | Score (0-1) | Weighted |
+|---|---|---|---|
+| Tenant isolation | 40 | 0.88 | 35.2 |
+| Permission enforcement | 20 | 0.85 | 17.0 |
+| Feature completeness | 20 | 0.75 | 15.0 |
+| Review discipline | 10 | 0.85 | 8.5 |
+| Observability | 10 | 0.70 | 7.0 |
+
+**Total: 82.7 / 100**. Up from 74.5 after #21 (files + audit), #22 (search
++ AI), #20 (jwt-sync), #28 (auth callback + onboarding). Hard-fail
+conditions still NONE confirmed.
+
+Drivers since last update:
+
+- **Tenant isolation 0.85 → 0.88**: search FTS query reuses the same SQL
+  visibility predicate as `listVisible` (`permissions/note-visibility-sql.ts`);
+  AI summary route filters note ids through that predicate before the
+  prompt is built. Files service gates downloads by `canReadFile` per
+  request. Audit log writers wired across notes / orgs / files.
+- **Permission enforcement 0.80 → 0.85**: `services.audit` writers added
+  for every mutation surface; share grant cross-org symmetry test added in
+  PR #14 polish; file permissions use parent-note share gating.
+- **Feature completeness 0.50 → 0.75**: notes + search + AI + files all
+  end-to-end functional against real Supabase. Onboarding/create-org +
+  email-confirmation flow round-tripped manually 2026-05-09.
+- **Review discipline 0.80 → 0.85**: 21 merged PRs over ~3 days, all with
+  risk labels + Copilot-review responses + conflict-resolution discipline.
+- **Observability 0.65 → 0.70**: `audit_log` writes on every mutation;
+  AI events logged with prompt hash. Sinks still stdout-only — no
+  aggregation pipeline.
+
+### What is complete
+
+- All 9 schema tables under RLS (`0001_rls.sql`, `0003_rls_note_shares.sql`).
+- All 4 SQL migrations registered in journal, applied to cloud DB
+  (verified hashes match repo).
+- Auth: signin / signup / signout / reset / email-confirmation /
+  callback / onboarding / org create / switch / membership management.
+- Notes: CRUD + tags + shares + versions + diff UI.
+- Search: FTS migration + visibility-filtered SQL query + UI.
+- AI: permission-safe context builder + summarize service + review-before-
+  accept UI + in-memory rate limiter + audit log writers.
+- Files: upload + signed-URL download + delete + audit log writers, with
+  parent-note share gating.
+- Audit: writers across notes / orgs / files services.
+- CI: lint + typecheck + test + build + Docker validation.
+- 13 PRs merged before validation walkthrough; 8 follow-up PRs
+  (#16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29).
+
+### What is known-unfinished (deferred with rationale)
+
+| ID | Area | Why deferred |
+|---|---|---|
+| DR-PROD-01 / DR-PROD-02 / DR-PROD-03 | JWT app_metadata.org_ids sync, short JWT expiry, force-signout on member removal | Wired in PR #20. **Not exercised against a real prod-like environment.** Block prod deploy on real-environment validation. |
+| DR-PROD-04 / CI-04 | CI migration validation against ephemeral Postgres | Out-of-scope for this slice (needs CI secret + service container). |
+| DR-PROD-05 / DR-PROD-06 | Migration runbook + pre-deploy diff Action | Operational, not blocking. |
+| DR-05 / VAL-06 | End-to-end cloud RLS smoke (two real users in two orgs) | Pending — needs a deliberate two-account session. |
+| AI-01 .. AI-05 | Real Anthropic smoke, distributed rate limiter, prompt-injection edge cases, golden outputs, audit wiring | All TODOs queued; none are deploy-blockers individually. AI-03 (prompt-injection edge cases) is the most security-relevant. |
+| N-FOLLOW-01 | Tag history snapshot in `note_versions` | Polish; issue #15. |
+| VAL-05 | Cloud DB seed | Operational (one-shot script run); guard already in place. |
+| VAL-10 / VAL-12 / VAL-11 / VAL-13 | Orphan auth-user cleanup, seed reset auth-user parity, createFirstOrg self-heal, onboarding nav | Tracked; not yet dispatched. VAL-11 is the only remaining HIGH (FK violation reproducible in dev only). |
+
+### What is deferred and why
+
+- **Distributed rate-limiter (AI-02)**: in-memory limiter is multi-instance
+  unsafe; Railway currently runs single-instance. `TODO(redis)` marker in
+  `services/ai-rate-limiter.ts:4`.
+- **Performance validation at 10k notes**: FTS scaffolded with GIN index;
+  never load-tested. Acceptable for evaluation, not for production.
+- **Observability aggregation**: structured logger writes JSON to stdout;
+  no sink pipeline (Datadog / Loki / etc.) wired.
+- **E2E Playwright auth flow against real Supabase**: only manual
+  walkthrough done (which surfaced VAL-01..13). Worth budgeting before
+  prod.
+
+### Risk register status (cross-checked vs. live table above)
+
+All HIGH risks from bootstrap closed by SQL-level predicate (PR #9),
+RLS migrations (PR #8 + #11 + #13), files-service per-request `canReadFile`
+gating (PR #21), and AI permission-safe context builder (PR #22). Two HIGH
+items remain open as **block-prod-deploy**, not block-evaluation:
+
+- DR-PROD-01 — JWT claim sync: code shipped in PR #20; not exercised
+  against real prod-like environment.
+- VAL-11 — `createFirstOrgAction` FK self-heal: dev-only (orphan
+  auth.users from `seed --reset`); not reproducible in clean prod.
+
+---
+
+## 2026-05-09 — VAL-11 + VAL-13 (auth-followup)
+
+### VAL-11 — `createFirstOrgAction` self-heal (P1 HIGH)
+
+`memberships.user_id → users.id` FK was tripping for users whose
+`public.users` mirror had been wiped (dev `seed --reset` cascade leaves
+`auth.users` orphaned). The brand-new user got stuck with no membership,
+no org, no path forward.
+
+Fix: `OrgsRepository.createWithAdmin` now accepts an optional
+`selfHealUserEmail`. When supplied, it runs `INSERT INTO users (id, email)
+... ON CONFLICT (id) DO NOTHING` inside the SAME transaction as the org +
+membership writes. Idempotent — existing rows are left untouched.
+`createFirstOrgAction` is the only caller that passes the email
+(threaded from `supabase.auth.getUser()`). The service-layer `createOrg`
+path is unchanged: an existing-member already has a `users` mirror by
+definition, so self-heal is unnecessary there.
+
+Tests use pglite (real Postgres FK enforcement, not mocks) so the bug
+would actually reproduce without the fix. Coverage: orphan creates org +
+membership (no FK error), idempotent on existing mirror (no overwrite),
+strict default still FK-fails without `selfHealUserEmail` (regression
+guard), and a unit-style assertion that `createFirstOrgAction` forwards
+`user.email` to the repo.
+
+### VAL-13 — Onboarding nav + Sign out (P1 MEDIUM)
+
+`/onboarding/create-org` previously rendered the form on a logo-only
+header. An authenticated user with no membership had no way to sign out
+or change accounts — bad UX, dead-end if anything went wrong (e.g. the
+VAL-11 FK error).
+
+Fix: new `OnboardingTopBar` component renders Logo on the left and
+"Signed in as `<email>`" + an account dropdown with **Sign out** on the
+right. Sign-out posts to the existing `signOutAction` (already tested,
+already redirects to `/sign-in`). No side nav, no org switcher — orphan
+state has nowhere to navigate. Visual tier matches `AuthCard`: calm
+background, soft `border-border/50`, no sticky/blur backdrop.
+
+The sign-out form is duplicated as a visually-hidden `<form
+className="sr-only">` so a keyboard / no-JS / portal-glitch user can
+still escape; the dropdown is the primary affordance, the hidden form
+is defence-in-depth.
+
+### Why these two together
+
+VAL-11 and VAL-13 are siblings: VAL-11 fixes the FK error itself, VAL-13
+ensures that if any error like it ever surfaces again, the user has a
+visible escape hatch instead of being stranded.
