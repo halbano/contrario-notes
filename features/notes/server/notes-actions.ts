@@ -16,7 +16,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { z, type ZodError } from 'zod'
+import { type ZodError } from 'zod'
 import { getRequestContext } from '@/lib/auth-context'
 import { createScopedServices } from '@/services'
 import { AppError, isAppError } from '@/lib/errors'
@@ -177,6 +177,3 @@ export async function createNoteFormAction(formData: FormData): Promise<void> {
   }
   redirect(`/notes/${result.data.id}`)
 }
-
-// Help tree-shaking — re-export only what's needed.
-export { z }
