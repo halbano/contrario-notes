@@ -34,20 +34,38 @@ function safeRedirect(target: string | null): string {
   return target
 }
 
+/**
+ * Resolve the public-facing origin for redirect Location headers.
+ *
+ * Behind Railway's proxy, `req.url` resolves to the internal container
+ * hostname (e.g. `https://ce26f473040c:8080`) which the browser cannot
+ * follow. Prefer the explicit `NEXT_PUBLIC_APP_URL`; fall back to
+ * forwarded headers, then to the request URL as a last resort.
+ */
+function getPublicOrigin(req: Request): string {
+  const env = process.env.NEXT_PUBLIC_APP_URL
+  if (env) return env.replace(/\/$/, '')
+  const forwardedHost = req.headers.get('x-forwarded-host')
+  const forwardedProto = req.headers.get('x-forwarded-proto') ?? 'https'
+  if (forwardedHost) return `${forwardedProto}://${forwardedHost}`
+  return new URL(req.url).origin
+}
+
 export async function GET(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const code = url.searchParams.get('code')
   const redirectTo = safeRedirect(url.searchParams.get('redirectTo'))
+  const origin = getPublicOrigin(req)
 
   if (!code) {
-    return NextResponse.redirect(new URL('/sign-in?error=callback_failed', url.origin), 303)
+    return NextResponse.redirect(new URL('/sign-in?error=callback_failed', origin), 303)
   }
 
   const supabase = await createSupabaseServerClient()
   const { error } = await supabase.auth.exchangeCodeForSession(code)
   if (error) {
-    return NextResponse.redirect(new URL('/sign-in?error=callback_failed', url.origin), 303)
+    return NextResponse.redirect(new URL('/sign-in?error=callback_failed', origin), 303)
   }
 
-  return NextResponse.redirect(new URL(redirectTo, url.origin), 303)
+  return NextResponse.redirect(new URL(redirectTo, origin), 303)
 }
