@@ -26,6 +26,8 @@ Each ADR contains:
 | ADR-0005 | File storage in Supabase Storage with signed URLs | accepted | 2026-05-07 |
 | ADR-0006 | AI context restricted to user-visible notes | accepted | 2026-05-07 |
 | ADR-0007 | Worktree + branch-per-agent execution model | accepted | 2026-05-07 |
+| ADR-0008 | Tenant-isolation tests on pglite (real Postgres) | accepted | 2026-05-07 |
+| ADR-0009 | AI prompt-injection hardening (escape + strip + caps) | accepted | 2026-05-10 |
 
 ## Update rules
 
