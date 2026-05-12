@@ -215,3 +215,49 @@ explicitly deferred to TODO.md tracking.
   VAL-11 / VAL-12 / VAL-13 tracked as P1 / P2 in TODO.md, not yet
   shipped.
 - Status: partially resolved (PR #28); VAL-11 / VAL-12 / VAL-13 open.
+
+---
+
+## 2026-05-12 addendum — late-cycle review notes
+
+### What I reviewed deeply in this session
+
+- **`repositories/search-repository.ts`** (PR #48). Verified the new
+  `buildPrefixTsQuery()` strips every ts_query operator
+  (`& | ! : ( ) \ *`) so the user cannot inject query operators via the
+  search bar. Confirmed the `to_tsquery` argument is still parameter-bound
+  via Drizzle's `sql` template tag — no string concatenation. Re-ran all
+  8 search-isolation cases (tenancy + visibility + rank invariants still
+  hold) and confirmed the new prefix-match case passes.
+- **`features/notes/components/share-panel.tsx`** (PR #49). Audited
+  that the server path is unchanged — the email-vs-userId resolution
+  happens client-side, but `services.notes.shareNote` still re-checks
+  `canShareNote` and tenant scoping inside the request context, so a
+  tampered email→userId lookup cannot widen access. The `<datalist>`
+  only contains org-member emails the page already serialised, so no
+  new email-enumeration surface.
+
+### What I distrusted in this session
+
+- **Client-side email matching** in PR #49 is convenient but not
+  authoritative. The defence is that the server re-resolves the userId
+  to a membership in the active org. If that re-check ever regresses,
+  the UI becomes the only barrier — which is exactly the pattern
+  TENANCY_INVARIANTS #4 forbids. Worth a follow-up test that asserts
+  `services.notes.shareNote` rejects a cross-org userId regardless of
+  what the form submitted.
+
+### What I would review next with more time
+
+- **AI audit wiring (AI-05).** `services.ai-service.ts` still doesn't
+  emit `audit_log` rows for `ai.summary_requested / completed / failed`.
+  ~20 LOC; low risk, but the audit story is incomplete without it.
+- **DR-05 cloud RLS smoke.** Two-user cross-org check end-to-end on
+  Railway, asserting that a UI mutation cannot leak across orgs. The
+  pglite suite covers the SQL layer but never exercises the real
+  Supabase JWT path under live policies.
+- **Search `:*` plan/cost profile.** Prefix wildcards in `to_tsquery`
+  prevent index-only scans in some corpora. The current notes table is
+  small enough that this is invisible, but at >10k notes per org I
+  would want EXPLAIN ANALYZE numbers and possibly a fallback to plain
+  `plainto_tsquery` for whole-token queries.

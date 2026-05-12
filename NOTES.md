@@ -821,3 +821,54 @@ the email link for us.
 - Custom invite email template / branding — Supabase's default works.
 - Bulk invite (comma-separated list) — single-email loop suffices today.
 - Localisation of the invite email — Supabase dashboard only.
+
+---
+
+## 2026-05-12 — Follow-up fixes (search prefix + share-by-email)
+
+### Search prefix-match (BUG-0021, PR #48)
+
+User reported searching `vitre` on Railway returned 0 hits despite two
+notes containing `Vitrectomy`. Root cause: `plainto_tsquery('simple', $q)`
+matches whole tokens only — the `simple` dictionary applies no stemming
+and `plainto_tsquery` does not glue a `:*` wildcard onto terms.
+
+Fix on `fix/search-prefix-match`:
+- New `buildPrefixTsQuery()` helper in `repositories/search-repository.ts`:
+  tokenize on whitespace, strip ts_query operator chars (`&|!:()\*`) per
+  token, append `:*`, join with ` & `. Empty/operator-only input → bypass
+  FTS (return []).
+- Both the WHERE and the `ts_rank()` calls switched to
+  `to_tsquery('simple', <built>)`.
+- New test in `tests/search-isolation.test.ts` asserting that searching
+  `vitre` matches a note titled `Vitrectomy Recovery`.
+
+All 330/330 tests still pass. Visibility / tenancy / rank invariants
+unchanged.
+
+### Note share by email (PR #49)
+
+User wanted Google Drive-style sharing — type an email, not pick from a
+dropdown. Replaced the `<select>` in `features/notes/components/share-panel.tsx`
+with an `<input type="email">` plus a `<datalist>` of unshared org-member
+emails for typeahead. Email is resolved client-side against the
+`orgMembers` list the host page already loads. Non-member email → inline
+error with a link to `/settings/members` (admin invite flow shipped in
+PR #47).
+
+Server-side share path (`shareNoteAction` → `services.notes.shareNote`)
+unchanged. The server still re-checks `canShareNote` and tenant scoping,
+so a tampered client-side lookup cannot widen access.
+
+### Why these two were paired
+
+Both are pure UX defects surfaced by walking the deployed app — neither
+touches data model, RLS, or service contracts. Easy to merge
+independently; no migration churn.
+
+### Open
+
+- Demo video.
+- AI-05 audit wiring (services/ai-service.ts — record summary_requested
+  / completed / failed events).
+- DR-05 cloud RLS smoke (two-user cross-org check against Railway).

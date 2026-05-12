@@ -175,3 +175,22 @@ Opinionated, based on observed failures across this session.
    second install-vs-import drift (caught at install time, not in
    review). A pre-merge check that diffs `package.json` against actual
    imports would close this.
+
+---
+
+## 2026-05-12 addendum — follow-up fixes (no new agents)
+
+Two PRs landed inline (no agent dispatch) because both were narrow,
+single-file UX defects discovered by walking the deployed app:
+
+| PR | Surface | LOC | Why no agent |
+|---|---|---|---|
+| #48 — search prefix-match (BUG-0021) | `repositories/search-repository.ts` + 1 test | ~25 | Single file, single-function helper. Faster than the agent-prompt round-trip. |
+| #49 — note share by email | `features/notes/components/share-panel.tsx` | ~74 | Pure UI swap (`<select>` → `<input type="email">` + `<datalist>`). No service contract change. |
+
+Both were diagnosed by reading user-supplied screenshots (search), then
+the existing code paths, then implementing the smallest possible diff.
+Pattern: **once the codebase is mature and conventions are
+established, the orchestrator + Edit/Write/Bash tools beat a fresh
+agent on round-trip latency for sub-100-LOC fixes**. Agents pay off
+when the task is large enough to amortize the prompt-design cost.
