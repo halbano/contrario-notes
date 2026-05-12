@@ -19,6 +19,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { z } from 'zod'
 
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getRequestContext } from '@/lib/auth-context'
@@ -32,6 +33,15 @@ import { syncUserOrgIds } from '@/features/auth/server/jwt-sync'
 
 export type OrgActionResult =
   | { ok: true }
+  | { ok: false; message: string; code?: string }
+
+/**
+ * Distinct shape for invite-by-email: the form needs to render a
+ * status-specific message ("added" vs "invited" vs "already_member") so we
+ * surface the underlying service status rather than the generic ok-boolean.
+ */
+export type InviteByEmailActionResult =
+  | { ok: true; status: 'added' | 'invited' | 'already_member'; userId: string }
   | { ok: false; message: string; code?: string }
 
 /**
@@ -154,4 +164,46 @@ export async function switchOrgAndRedirect(formData: FormData): Promise<void> {
   if (result.ok) redirect('/')
   // On failure we still redirect home — not_found is opaque to the user.
   redirect('/')
+}
+
+const INVITE_FORM_SCHEMA = z.object({
+  email: z.string().trim().min(1, 'Email is required'),
+  role: z.enum(['admin', 'member', 'viewer']),
+})
+
+/**
+ * Invite a member by email (VAL-18). Form action invoked from the
+ * /settings/members panel.
+ *
+ * The action itself only parses + delegates — `services.orgs.inviteByEmail`
+ * holds all the business logic (admin gating, existing-vs-new branch, audit,
+ * JWT sync). On success we revalidate `/settings/members` so the freshly
+ * added membership (or pending invite) shows up on the next render.
+ */
+export async function inviteMemberByEmailAction(
+  formData: FormData,
+): Promise<InviteByEmailActionResult> {
+  const parsed = INVITE_FORM_SCHEMA.safeParse({
+    email: formData.get('email'),
+    role: formData.get('role'),
+  })
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: 'invalid_input',
+      message: parsed.error.issues[0]?.message ?? 'Invalid input.',
+    }
+  }
+  const ctx = await getRequestContext()
+  const services = createScopedServices(ctx)
+  try {
+    const result = await services.orgs.inviteByEmail(parsed.data)
+    revalidatePath('/settings/members')
+    return { ok: true, status: result.status, userId: result.userId }
+  } catch (err) {
+    if (err instanceof AppError) {
+      return { ok: false, code: err.code, message: err.message }
+    }
+    return { ok: false, message: 'Failed to send invite.' }
+  }
 }
