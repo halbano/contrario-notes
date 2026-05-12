@@ -61,17 +61,24 @@ function toFilePermissionView(f: DbFile, parent: NoteForPermission | null): File
 }
 
 /**
- * Sanitize a user-supplied filename for the storage path. We keep the
- * extension but strip path separators, control chars, and limit length.
- * The file_id prefix in the path guarantees uniqueness regardless.
+ * Sanitize a user-supplied filename for the storage path.
+ *
+ * Supabase Storage rejects object keys containing spaces and various
+ * special characters with `Invalid key`. We collapse anything that is
+ * not in `[A-Za-z0-9._-]` to `_`, preserving the extension and keeping
+ * the result URI-path-segment safe. The file_id prefix in the storage
+ * path still guarantees uniqueness regardless of how aggressive the
+ * collapse is — the original filename lives in `files.filename` for
+ * display.
  */
 function sanitizeFilename(name: string): string {
   const trimmed = name.trim()
-  // Remove path separators / null bytes / leading dots.
   const safe = trimmed
     // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1f\x7f/\\]+/g, '_')
     .replace(/^\.+/, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/_{2,}/g, '_')
     .slice(0, 200)
   return safe.length > 0 ? safe : 'file'
 }
