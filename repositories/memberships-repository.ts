@@ -1,9 +1,18 @@
-import { and, eq } from 'drizzle-orm'
-import { memberships, type DbMembership } from '@/db/schema'
+import { and, asc, eq } from 'drizzle-orm'
+import { memberships, users, type DbMembership } from '@/db/schema'
 import type { Role } from '@/lib/request-context'
 import { getDb } from '@/db/client'
 import type { AnyDb } from './notes-repository'
 import type { RequestContext } from './types'
+
+/**
+ * Display projection of a membership row joined with the auth-identity
+ * mirror. Used by the members panel (/settings/members).
+ */
+export type MembershipWithUser = DbMembership & {
+  email: string
+  displayName: string | null
+}
 
 /**
  * "Pre-context" memberships query. Used by the request-context builder
@@ -43,6 +52,12 @@ export async function findAllMembershipsForUser(
 export type MembershipsRepository = {
   /** All memberships in the current org (admin-facing list). */
   listForCurrentOrg(): Promise<DbMembership[]>
+
+  /**
+   * All memberships in the current org joined with the auth-identity mirror.
+   * Powers the members panel (email + role + joined-at).
+   */
+  listForCurrentOrgWithUsers(): Promise<MembershipWithUser[]>
 
   /** The current user's membership in the current org. */
   findForCurrentUser(): Promise<DbMembership | null>
@@ -96,6 +111,24 @@ export function createMembershipsRepository(
         .select()
         .from(memberships)
         .where(eq(memberships.orgId, ctx.orgId))
+    },
+
+    async listForCurrentOrgWithUsers() {
+      const rows = await db
+        .select({
+          id: memberships.id,
+          orgId: memberships.orgId,
+          userId: memberships.userId,
+          role: memberships.role,
+          createdAt: memberships.createdAt,
+          email: users.email,
+          displayName: users.displayName,
+        })
+        .from(memberships)
+        .innerJoin(users, eq(users.id, memberships.userId))
+        .where(eq(memberships.orgId, ctx.orgId))
+        .orderBy(asc(users.email))
+      return rows as MembershipWithUser[]
     },
 
     async findForCurrentUser() {

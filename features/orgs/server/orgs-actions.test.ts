@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  */
 
 const inviteByEmailMock = vi.fn()
+const changeRoleMock = vi.fn()
+const removeMemberMock = vi.fn()
 const getRequestContextMock = vi.fn()
 const revalidatePathMock = vi.fn()
 
@@ -27,14 +29,22 @@ vi.mock('@/lib/auth-context', () => ({
 
 vi.mock('@/services', () => ({
   createScopedServices: () => ({
-    orgs: { inviteByEmail: inviteByEmailMock },
+    orgs: {
+      inviteByEmail: inviteByEmailMock,
+      changeRole: changeRoleMock,
+      removeMember: removeMemberMock,
+    },
   }),
 }))
 
 // AppError carries the canonical `code`s the action needs to map. Use the
 // real class (not a stub) so `instanceof` checks inside the action work.
 import { AppError } from '@/lib/errors'
-import { inviteMemberByEmailAction } from './orgs-actions'
+import {
+  changeMemberRoleAction,
+  inviteMemberByEmailAction,
+  removeMemberAction,
+} from './orgs-actions'
 
 const CTX = Object.freeze({
   userId: '00000000-0000-0000-0000-0000000000aa',
@@ -44,6 +54,8 @@ const CTX = Object.freeze({
 
 beforeEach(() => {
   inviteByEmailMock.mockReset()
+  changeRoleMock.mockReset()
+  removeMemberMock.mockReset()
   getRequestContextMock.mockReset()
   revalidatePathMock.mockReset()
   getRequestContextMock.mockResolvedValue(CTX)
@@ -125,5 +137,50 @@ describe('inviteMemberByEmailAction', () => {
     expect(out).toMatchObject({ ok: false })
     if (out.ok) throw new Error('unreachable')
     expect(out.message).not.toContain('SMTP')
+  })
+})
+
+const MID = '11111111-1111-1111-1111-111111111111'
+
+describe('changeMemberRoleAction', () => {
+  it('rejects malformed membershipId without calling the service', async () => {
+    const fd = makeFormData({ membershipId: 'not-a-uuid', role: 'admin' })
+    const out = await changeMemberRoleAction(fd)
+    expect(out).toMatchObject({ ok: false, code: 'invalid_input' })
+    expect(changeRoleMock).not.toHaveBeenCalled()
+  })
+
+  it('delegates to services.orgs.changeRole and revalidates the members page', async () => {
+    changeRoleMock.mockResolvedValue({})
+    const fd = makeFormData({ membershipId: MID, role: 'admin' })
+    const out = await changeMemberRoleAction(fd)
+    expect(out).toEqual({ ok: true })
+    expect(changeRoleMock).toHaveBeenCalledWith(MID, 'admin')
+    expect(revalidatePathMock).toHaveBeenCalledWith('/settings/members')
+  })
+
+  it('surfaces AppError.code when the service rejects', async () => {
+    changeRoleMock.mockRejectedValue(new AppError('not_found', 'Not found'))
+    const fd = makeFormData({ membershipId: MID, role: 'admin' })
+    const out = await changeMemberRoleAction(fd)
+    expect(out).toMatchObject({ ok: false, code: 'not_found' })
+  })
+})
+
+describe('removeMemberAction', () => {
+  it('rejects malformed membershipId before reaching the service', async () => {
+    const fd = makeFormData({ membershipId: 'nope' })
+    const out = await removeMemberAction(fd)
+    expect(out).toMatchObject({ ok: false, code: 'invalid_input' })
+    expect(removeMemberMock).not.toHaveBeenCalled()
+  })
+
+  it('delegates to services.orgs.removeMember and revalidates the members page', async () => {
+    removeMemberMock.mockResolvedValue(undefined)
+    const fd = makeFormData({ membershipId: MID })
+    const out = await removeMemberAction(fd)
+    expect(out).toEqual({ ok: true })
+    expect(removeMemberMock).toHaveBeenCalledWith(MID)
+    expect(revalidatePathMock).toHaveBeenCalledWith('/settings/members')
   })
 })

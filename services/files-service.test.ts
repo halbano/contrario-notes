@@ -108,6 +108,7 @@ function makeRepos(opts: {
     },
     memberships: {
       listForCurrentOrg: vi.fn(async () => []),
+      listForCurrentOrgWithUsers: vi.fn(async () => []),
       findForCurrentUser: vi.fn(async () => null),
       findForUserAndOrg: vi.fn(async () => null),
       add: vi.fn(),

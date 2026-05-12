@@ -61,6 +61,7 @@ function makeRepos(initialNote: DbNote | null) {
     },
     memberships: {
       listForCurrentOrg: vi.fn(async () => []),
+      listForCurrentOrgWithUsers: vi.fn(async () => []),
       findForCurrentUser: vi.fn(async () => null),
       findForUserAndOrg: vi.fn(async () => null),
       add: vi.fn(async () => {

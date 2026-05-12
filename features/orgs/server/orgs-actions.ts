@@ -180,6 +180,69 @@ const INVITE_FORM_SCHEMA = z.object({
  * JWT sync). On success we revalidate `/settings/members` so the freshly
  * added membership (or pending invite) shows up on the next render.
  */
+const CHANGE_ROLE_SCHEMA = z.object({
+  membershipId: z.string().uuid(),
+  role: z.enum(['admin', 'member', 'viewer']),
+})
+
+/**
+ * Change a member's role in the current org. Admin-only at the service layer.
+ * Form action for the members panel.
+ */
+export async function changeMemberRoleAction(
+  formData: FormData,
+): Promise<OrgActionResult> {
+  const parsed = CHANGE_ROLE_SCHEMA.safeParse({
+    membershipId: formData.get('membershipId'),
+    role: formData.get('role'),
+  })
+  if (!parsed.success) {
+    return { ok: false, code: 'invalid_input', message: 'Invalid input.' }
+  }
+  const ctx = await getRequestContext()
+  const services = createScopedServices(ctx)
+  try {
+    await services.orgs.changeRole(parsed.data.membershipId, parsed.data.role)
+    revalidatePath('/settings/members')
+    return { ok: true }
+  } catch (err) {
+    if (err instanceof AppError) {
+      return { ok: false, code: err.code, message: err.message }
+    }
+    return { ok: false, message: 'Failed to change role.' }
+  }
+}
+
+const REMOVE_MEMBER_SCHEMA = z.object({
+  membershipId: z.string().uuid(),
+})
+
+/**
+ * Remove a member from the current org. Admin-only at the service layer.
+ */
+export async function removeMemberAction(
+  formData: FormData,
+): Promise<OrgActionResult> {
+  const parsed = REMOVE_MEMBER_SCHEMA.safeParse({
+    membershipId: formData.get('membershipId'),
+  })
+  if (!parsed.success) {
+    return { ok: false, code: 'invalid_input', message: 'Invalid input.' }
+  }
+  const ctx = await getRequestContext()
+  const services = createScopedServices(ctx)
+  try {
+    await services.orgs.removeMember(parsed.data.membershipId)
+    revalidatePath('/settings/members')
+    return { ok: true }
+  } catch (err) {
+    if (err instanceof AppError) {
+      return { ok: false, code: err.code, message: err.message }
+    }
+    return { ok: false, message: 'Failed to remove member.' }
+  }
+}
+
 export async function inviteMemberByEmailAction(
   formData: FormData,
 ): Promise<InviteByEmailActionResult> {

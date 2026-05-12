@@ -156,6 +156,12 @@ export function createOrgsService(
     listMemberships: () => repos.memberships.listForCurrentOrg(),
 
     /**
+     * List memberships in the current org joined with user email / display.
+     * Powers the members panel.
+     */
+    listMembershipsWithUsers: () => repos.memberships.listForCurrentOrgWithUsers(),
+
+    /**
      * Add a member to the current org. Admin-only.
      * NOTE: this does NOT create a Supabase auth user — that must already
      * exist. Used when accepting an invite or when an admin manually
