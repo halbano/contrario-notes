@@ -107,6 +107,16 @@ function makeRepos(): Repositories {
     search: {
       searchVisible: vi.fn(async () => []),
     },
+    users: {
+      findById: vi.fn(async () => null),
+      findByEmail: vi.fn(async () => null),
+      upsertMirror: vi.fn(async ({ id, email }) => ({
+        id,
+        email,
+        displayName: null,
+        createdAt: new Date(),
+      })),
+    },
     db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
   }
 }
