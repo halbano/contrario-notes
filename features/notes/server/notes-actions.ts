@@ -70,6 +70,7 @@ export async function createNoteAction(
       await services.notes.setNoteTags(note.id, parsed.data.tags)
     }
     revalidatePath('/notes')
+    revalidatePath('/')
     return { ok: true, data: { id: note.id } }
   } catch (e) {
     return toResult(e)
@@ -93,6 +94,7 @@ export async function updateNoteAction(
     }
     revalidatePath('/notes')
     revalidatePath(`/notes/${id}`)
+    revalidatePath('/')
     return { ok: true, data: { id: note.id } }
   } catch (e) {
     return toResult(e)
@@ -111,6 +113,7 @@ export async function deleteNoteAction(
     const services = createScopedServices(ctx)
     await services.notes.remove(parsed.data.id)
     revalidatePath('/notes')
+    revalidatePath('/')
     return { ok: true }
   } catch (e) {
     return toResult(e)
