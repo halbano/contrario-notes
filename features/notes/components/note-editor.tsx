@@ -38,6 +38,13 @@ export interface NoteEditorProps {
   tagSuggestions?: string[]
   /** When true, render a Delete button (edit mode only). */
   showDelete?: boolean
+  /**
+   * Optional slot rendered between the tag field and the save/delete row.
+   * Used by the note-detail page to put the file-attachments section
+   * directly above the action buttons (visual grouping with the rest of
+   * the form). Not used in create mode.
+   */
+  attachmentsSlot?: React.ReactNode
 }
 
 type FieldErrors = Record<string, string[]>
@@ -54,6 +61,7 @@ export function NoteEditor({
   initialTags = [],
   tagSuggestions = [],
   showDelete = false,
+  attachmentsSlot,
 }: NoteEditorProps) {
   const router = useRouter()
   const [state, setState] = React.useState<State>(initialState)
@@ -235,6 +243,8 @@ export function NoteEditor({
         <Label>Tags</Label>
         <TagInput value={tags} onChange={setTags} suggestions={tagSuggestions} />
       </div>
+
+      {attachmentsSlot}
 
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={state.pending}>
