@@ -750,3 +750,74 @@ general HTML-escape rather than a dedicated branch).
   here; AI summary only reads `notes.content` today.
 - A real LLM-side adversarial benchmark (golden inputs + assert the
   model does not exfiltrate). Defer to AI-04.
+
+
+---
+
+## 2026-05-12 — VAL-18 invite by email (auth-followup)
+
+### What landed
+
+Full invite vertical for the org members panel:
+
+- `services.orgs.inviteByEmail({ email, role })` — admin-gated entry
+  point shared between the two branches (existing user → immediate
+  membership insert + DR-PROD-01 JWT sync; new email → Supabase admin
+  `inviteUserByEmail` with `invited_org_id` / `invited_role` /
+  `invited_by` packed into `user_metadata`).
+- `/onboarding/accept-invite` page (hit after `/auth/callback`
+  exchanges the email-link code) — reads `user_metadata.invited_*`,
+  inserts the membership idempotently (`MembershipsRepository.addIfMissing`),
+  refreshes `app_metadata.org_ids`, writes the active-org cookie, and
+  clears the consumed `invited_*` keys so a replay falls through to
+  `/onboarding/create-org`.
+- `/settings/members` admin UI — invite form + member list with role
+  change / remove inline. Non-admin sees an EmptyState (page is not
+  a secret, but only admins can mutate).
+- `inviteMemberByEmailAction` / `changeMemberRoleAction` /
+  `removeMemberAction` server actions wrap the service methods.
+- `repositories/users-repository.ts` — new identity-scoped repo with
+  `findByEmail` (case-insensitive) + `upsertMirror` (idempotent
+  ON CONFLICT DO NOTHING).
+
+### Key Supabase primitive
+
+`admin.auth.admin.inviteUserByEmail(email, { redirectTo, data })`
+sends the email AND stamps the `data` object into the new user's
+`user_metadata`. The accept-invite page picks those keys up via
+`supabase.auth.getUser()` → `user.user_metadata.invited_*`. This
+is the load-bearing piece — no separate `invites` table is needed
+because Supabase's `user_metadata` round-trips the payload through
+the email link for us.
+
+### Security notes
+
+- `redirectTo` always goes through `/auth/callback?redirectTo=/onboarding/accept-invite`,
+  reusing the existing open-redirect guard (only safe same-origin
+  paths after sanitisation).
+- Accept-invite re-validates `invited_org_id` (UUID) and
+  `invited_role` (enum) before any write — tampered metadata cannot
+  widen access.
+- Membership insert is idempotent; replaying the link does not write
+  duplicates and the second hit falls through to
+  `/onboarding/create-org` because the metadata is cleared on first
+  success.
+- Non-admin invite caller surfaces as `not_found` (404), same
+  existence-non-disclosure pattern as the other membership ops.
+- Supabase admin failures collapse to `AppError('internal')` —
+  underlying SMTP / rate-limit messages do not reach the form.
+
+### Verification
+
+`lint && typecheck && test (329 passed, 34 files) && build` all green.
++33 tests vs the baseline:
+- `repositories/users-repository.test.ts` (7)
+- `services/orgs-service.test.ts` invite branch (8 new)
+- `features/orgs/server/orgs-actions.test.ts` (12 — invite, role change, remove)
+- `features/orgs/server/accept-invite-handler.test.ts` (7)
+
+### Deferred
+
+- Custom invite email template / branding — Supabase's default works.
+- Bulk invite (comma-separated list) — single-email loop suffices today.
+- Localisation of the invite email — Supabase dashboard only.

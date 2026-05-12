@@ -108,9 +108,11 @@ function makeRepos(opts: {
     },
     memberships: {
       listForCurrentOrg: vi.fn(async () => []),
+      listForCurrentOrgWithUsers: vi.fn(async () => []),
       findForCurrentUser: vi.fn(async () => null),
       findForUserAndOrg: vi.fn(async () => null),
       add: vi.fn(),
+      addIfMissing: vi.fn(),
       updateRole: vi.fn(async () => null),
       remove: vi.fn(async () => false),
     },
@@ -169,6 +171,16 @@ function makeRepos(opts: {
     },
     search: {
       searchVisible: vi.fn(async () => []),
+    },
+    users: {
+      findById: vi.fn(async () => null),
+      findByEmail: vi.fn(async () => null),
+      upsertMirror: vi.fn(async ({ id, email }) => ({
+        id,
+        email,
+        displayName: null,
+        createdAt: new Date(),
+      })),
     },
     db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
   }

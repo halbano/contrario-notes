@@ -61,9 +61,13 @@ function makeRepos(initialNote: DbNote | null) {
     },
     memberships: {
       listForCurrentOrg: vi.fn(async () => []),
+      listForCurrentOrgWithUsers: vi.fn(async () => []),
       findForCurrentUser: vi.fn(async () => null),
       findForUserAndOrg: vi.fn(async () => null),
       add: vi.fn(async () => {
+        throw new Error('not used')
+      }),
+      addIfMissing: vi.fn(async () => {
         throw new Error('not used')
       }),
       updateRole: vi.fn(async () => null),
@@ -115,6 +119,16 @@ function makeRepos(initialNote: DbNote | null) {
     },
     search: {
       searchVisible: vi.fn(async () => []),
+    },
+    users: {
+      findById: vi.fn(async () => null),
+      findByEmail: vi.fn(async () => null),
+      upsertMirror: vi.fn(async ({ id, email }) => ({
+        id,
+        email,
+        displayName: null,
+        createdAt: new Date(),
+      })),
     },
     // The unit tests don't drive the transactional path; provide a stub
     // that simply runs the callback against the same fake handle.

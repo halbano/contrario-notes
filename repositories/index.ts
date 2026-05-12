@@ -23,6 +23,7 @@ import {
   createSearchRepository,
   type SearchRepository,
 } from './search-repository'
+import { createUsersRepository, type UsersRepository } from './users-repository'
 import type { RequestContext } from './types'
 
 export type Repositories = {
@@ -35,6 +36,11 @@ export type Repositories = {
   files: FilesRepository
   auditLog: AuditLogRepository
   search: SearchRepository
+  /**
+   * Users (identity mirror). Not tenant-scoped — does not consume `ctx`.
+   * Used by the invite-by-email flow to resolve emails to user ids.
+   */
+  users: UsersRepository
   /** Underlying handle — services that need transactions reach into this. */
   db: AnyDb
 }
@@ -58,6 +64,7 @@ export function createRepositories(ctx: RequestContext, db?: AnyDb): Repositorie
     files: createFilesRepository(ctx, handle),
     auditLog: createAuditLogRepository(ctx, handle),
     search: createSearchRepository(ctx, handle),
+    users: createUsersRepository(handle),
     db: handle,
   }
 }
@@ -72,6 +79,7 @@ export type {
   FilesRepository,
   AuditLogRepository,
   SearchRepository,
+  UsersRepository,
   AnyDb,
 }
 export { scopedWhere, withOrgId } from './base-repository'

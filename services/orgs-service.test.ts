@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createScopedServices } from './index'
 import {
+  resetOrgsServiceAdminClientForTests,
   resetOrgsServiceJwtSyncForTests,
+  setOrgsServiceAdminClientForTests,
   setOrgsServiceJwtSyncForTests,
 } from './orgs-service'
 import type { DbMembership, DbOrganization } from '@/db/schema'
@@ -61,10 +63,14 @@ function makeRepos(): Repositories {
     },
     memberships: {
       listForCurrentOrg: vi.fn(async () => []),
+      listForCurrentOrgWithUsers: vi.fn(async () => []),
       findForCurrentUser: vi.fn(async () => null),
       findForUserAndOrg: vi.fn(async () => null),
       add: vi.fn(async ({ userId, role }) =>
         membership({ userId, role, id: 'm-new' }),
+      ),
+      addIfMissing: vi.fn(async ({ userId, role }) =>
+        membership({ userId, role, id: 'm-idem' }),
       ),
       updateRole: vi.fn(async (id, role) => membership({ id, role })),
       remove: vi.fn(async () => true),
@@ -107,6 +113,16 @@ function makeRepos(): Repositories {
     search: {
       searchVisible: vi.fn(async () => []),
     },
+    users: {
+      findById: vi.fn(async () => null),
+      findByEmail: vi.fn(async () => null),
+      upsertMirror: vi.fn(async ({ id, email }) => ({
+        id,
+        email,
+        displayName: null,
+        createdAt: new Date(),
+      })),
+    },
     db: { transaction: async (fn: (tx: unknown) => unknown) => fn({}) } as never,
   }
 }
@@ -132,6 +148,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetOrgsServiceJwtSyncForTests()
+  resetOrgsServiceAdminClientForTests()
 })
 
 describe('orgs-service.createOrg', () => {
@@ -312,5 +329,179 @@ describe('orgs-service — DR-PROD-01 JWT sync wiring', () => {
     const syncOrder = syncSpy.mock.invocationCallOrder[0]!
     const signOutOrder = signOutSpy.mock.invocationCallOrder[0]!
     expect(syncOrder).toBeLessThan(signOutOrder)
+  })
+})
+
+// -----------------------------------------------------------------------------
+// VAL-18: invite-by-email
+// -----------------------------------------------------------------------------
+function makeAdminMock(opts: {
+  inviteResult?: { data: { user: { id: string } } | null; error: { message: string } | null }
+} = {}) {
+  const invite = vi.fn(async () =>
+    opts.inviteResult ?? {
+      data: { user: { id: '00000000-0000-0000-0000-000000000099' } },
+      error: null,
+    },
+  )
+  return {
+    invite,
+    getter: () =>
+      ({
+        auth: {
+          admin: {
+            inviteUserByEmail: invite,
+          },
+        },
+      }) as never,
+  }
+}
+
+describe('orgs-service.inviteByEmail — existing user branch', () => {
+  it('admin invites an existing user → membership added + JWT synced (target user)', async () => {
+    const repos = makeRepos()
+    repos.users.findByEmail = vi.fn(async () => ({
+      id: OTHER,
+      email: 'other@example.com',
+      displayName: null,
+      createdAt: new Date(),
+    }))
+    repos.memberships.findForUserAndOrg = vi.fn(async () => null)
+    const { invite, getter } = makeAdminMock()
+    setOrgsServiceAdminClientForTests(getter)
+    const svc = createScopedServices(ctxOf('admin'), {
+      repositories: repos,
+      logger: silent(),
+    })
+    const result = await svc.orgs.inviteByEmail({
+      email: 'other@example.com',
+      role: 'member',
+    })
+    expect(result).toMatchObject({ status: 'added', userId: OTHER })
+    expect(repos.memberships.add).toHaveBeenCalledWith({
+      userId: OTHER,
+      role: 'member',
+    })
+    expect(syncSpy).toHaveBeenCalledWith(OTHER, expect.anything())
+    expect(invite).not.toHaveBeenCalled()
+  })
+
+  it('returns already_member when the existing user is already in the current org', async () => {
+    const repos = makeRepos()
+    repos.users.findByEmail = vi.fn(async () => ({
+      id: OTHER,
+      email: 'other@example.com',
+      displayName: null,
+      createdAt: new Date(),
+    }))
+    repos.memberships.findForUserAndOrg = vi.fn(async () =>
+      membership({ userId: OTHER, role: 'member' }),
+    )
+    const svc = createScopedServices(ctxOf('admin'), {
+      repositories: repos,
+      logger: silent(),
+    })
+    const result = await svc.orgs.inviteByEmail({
+      email: 'OTHER@example.com',
+      role: 'member',
+    })
+    expect(result).toMatchObject({ status: 'already_member', userId: OTHER })
+    expect(repos.memberships.add).not.toHaveBeenCalled()
+    expect(syncSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('orgs-service.inviteByEmail — new-user (Supabase invite) branch', () => {
+  it('calls Supabase admin.inviteUserByEmail with org+role metadata and upserts the user mirror', async () => {
+    const repos = makeRepos()
+    repos.users.findByEmail = vi.fn(async () => null)
+    const newUserId = '00000000-0000-0000-0000-0000000000cc'
+    const { invite, getter } = makeAdminMock({
+      inviteResult: { data: { user: { id: newUserId } }, error: null },
+    })
+    setOrgsServiceAdminClientForTests(getter)
+    const svc = createScopedServices(ctxOf('admin'), {
+      repositories: repos,
+      logger: silent(),
+    })
+    const result = await svc.orgs.inviteByEmail({
+      email: 'newcomer@example.com',
+      role: 'admin',
+    })
+    expect(result).toEqual({ status: 'invited', userId: newUserId })
+    expect(invite).toHaveBeenCalledTimes(1)
+    const [email, options] = invite.mock.calls[0] as unknown as [
+      string,
+      { data?: Record<string, unknown> },
+    ]
+    expect(email).toBe('newcomer@example.com')
+    expect(options.data).toMatchObject({
+      invited_org_id: ORG,
+      invited_role: 'admin',
+      invited_by: ME,
+    })
+    expect(repos.users.upsertMirror).toHaveBeenCalledWith({
+      id: newUserId,
+      email: 'newcomer@example.com',
+    })
+    // No membership row written until the user accepts.
+    expect(repos.memberships.add).not.toHaveBeenCalled()
+  })
+
+  it('translates a Supabase admin failure into AppError(internal) without leaking the underlying message', async () => {
+    const repos = makeRepos()
+    repos.users.findByEmail = vi.fn(async () => null)
+    const { getter } = makeAdminMock({
+      inviteResult: {
+        data: null,
+        error: { message: 'rate limit hit (smtp)' },
+      },
+    })
+    setOrgsServiceAdminClientForTests(getter)
+    const svc = createScopedServices(ctxOf('admin'), {
+      repositories: repos,
+      logger: silent(),
+    })
+    await expect(
+      svc.orgs.inviteByEmail({
+        email: 'newcomer@example.com',
+        role: 'member',
+      }),
+    ).rejects.toMatchObject({ code: 'internal' })
+  })
+})
+
+describe('orgs-service.inviteByEmail — gating & validation', () => {
+  it('non-admin caller gets not_found (existence non-disclosure)', async () => {
+    const svc = createScopedServices(ctxOf('member'), {
+      repositories: makeRepos(),
+      logger: silent(),
+    })
+    await expect(
+      svc.orgs.inviteByEmail({ email: 'x@example.com', role: 'member' }),
+    ).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('rejects a malformed email with invalid_input', async () => {
+    const svc = createScopedServices(ctxOf('admin'), {
+      repositories: makeRepos(),
+      logger: silent(),
+    })
+    await expect(
+      svc.orgs.inviteByEmail({ email: 'not-an-email', role: 'member' }),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+  })
+
+  it('rejects an unknown role with invalid_input', async () => {
+    const svc = createScopedServices(ctxOf('admin'), {
+      repositories: makeRepos(),
+      logger: silent(),
+    })
+    await expect(
+      svc.orgs.inviteByEmail({
+        email: 'x@example.com',
+        role: 'superuser' as never,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
   })
 })

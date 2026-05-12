@@ -1,9 +1,18 @@
-import { and, eq } from 'drizzle-orm'
-import { memberships, type DbMembership } from '@/db/schema'
+import { and, asc, eq } from 'drizzle-orm'
+import { memberships, users, type DbMembership } from '@/db/schema'
 import type { Role } from '@/lib/request-context'
 import { getDb } from '@/db/client'
 import type { AnyDb } from './notes-repository'
 import type { RequestContext } from './types'
+
+/**
+ * Display projection of a membership row joined with the auth-identity
+ * mirror. Used by the members panel (/settings/members).
+ */
+export type MembershipWithUser = DbMembership & {
+  email: string
+  displayName: string | null
+}
 
 /**
  * "Pre-context" memberships query. Used by the request-context builder
@@ -44,6 +53,12 @@ export type MembershipsRepository = {
   /** All memberships in the current org (admin-facing list). */
   listForCurrentOrg(): Promise<DbMembership[]>
 
+  /**
+   * All memberships in the current org joined with the auth-identity mirror.
+   * Powers the members panel (email + role + joined-at).
+   */
+  listForCurrentOrgWithUsers(): Promise<MembershipWithUser[]>
+
   /** The current user's membership in the current org. */
   findForCurrentUser(): Promise<DbMembership | null>
 
@@ -56,6 +71,15 @@ export type MembershipsRepository = {
 
   /** Add a member to the current org. Admin-only at the service layer. */
   add(input: { userId: string; role: Role }): Promise<DbMembership>
+
+  /**
+   * Idempotent variant of `add` used by the invite-accept flow. Inserts
+   * (org_id, user_id, role); when a row for (org_id, user_id) already
+   * exists, leaves it untouched and returns the existing row. This is the
+   * ONLY place an insert may originate from a non-admin caller — accept-
+   * invite always inserts on behalf of the calling user themselves.
+   */
+  addIfMissing(input: { userId: string; role: Role }): Promise<DbMembership>
 
   /** Update a membership's role inside the current org. Admin-only. */
   updateRole(membershipId: string, role: Role): Promise<DbMembership | null>
@@ -87,6 +111,24 @@ export function createMembershipsRepository(
         .select()
         .from(memberships)
         .where(eq(memberships.orgId, ctx.orgId))
+    },
+
+    async listForCurrentOrgWithUsers() {
+      const rows = await db
+        .select({
+          id: memberships.id,
+          orgId: memberships.orgId,
+          userId: memberships.userId,
+          role: memberships.role,
+          createdAt: memberships.createdAt,
+          email: users.email,
+          displayName: users.displayName,
+        })
+        .from(memberships)
+        .innerJoin(users, eq(users.id, memberships.userId))
+        .where(eq(memberships.orgId, ctx.orgId))
+        .orderBy(asc(users.email))
+      return rows as MembershipWithUser[]
     },
 
     async findForCurrentUser() {
@@ -124,6 +166,30 @@ export function createMembershipsRepository(
         .returning()
       const row = rows[0]
       if (!row) throw new Error('Failed to insert membership')
+      return row
+    },
+
+    async addIfMissing({ userId, role }) {
+      const inserted = await db
+        .insert(memberships)
+        .values({ orgId: ctx.orgId, userId, role })
+        .onConflictDoNothing({
+          target: [memberships.orgId, memberships.userId],
+        })
+        .returning()
+      if (inserted[0]) return inserted[0]
+      const existing = await db
+        .select()
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.orgId, ctx.orgId),
+            eq(memberships.userId, userId),
+          )!,
+        )
+        .limit(1)
+      const row = existing[0]
+      if (!row) throw new Error('addIfMissing: row missing after insert')
       return row
     },
 
