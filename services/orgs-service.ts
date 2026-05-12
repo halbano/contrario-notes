@@ -1,3 +1,6 @@
+import { z } from 'zod'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 import type { Repositories } from '@/repositories'
 import type { RequestContext, Role } from '@/lib/request-context'
 import type { Logger } from '@/logging'
@@ -12,6 +15,7 @@ import {
   signOutUserGlobally,
   syncUserOrgIds,
 } from '@/features/auth/server/jwt-sync'
+import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 
 /**
  * Hook for tests: lets us swap out the JWT-sync helpers without touching the
@@ -38,6 +42,19 @@ export function resetOrgsServiceJwtSyncForTests(): void {
   jwtSyncImpl = { syncUserOrgIds, signOutUserGlobally }
 }
 
+/**
+ * Hook for tests: swap out the Supabase admin client used by
+ * `inviteByEmail` for invite emails. Production code never overrides this.
+ */
+type AdminClientGetter = () => Pick<SupabaseClient, 'auth'>
+let getAdminClientImpl: AdminClientGetter = getSupabaseAdminClient
+export function setOrgsServiceAdminClientForTests(impl: AdminClientGetter): void {
+  getAdminClientImpl = impl
+}
+export function resetOrgsServiceAdminClientForTests(): void {
+  getAdminClientImpl = getSupabaseAdminClient
+}
+
 export type OrgsService = ReturnType<typeof createOrgsService>
 
 /**
@@ -50,6 +67,35 @@ function isValidSlug(slug: string): boolean {
 function isValidOrgName(name: string): boolean {
   const trimmed = name.trim()
   return trimmed.length >= 2 && trimmed.length <= 80
+}
+
+const ROLE_SCHEMA = z.enum(['admin', 'member', 'viewer'])
+const INVITE_INPUT_SCHEMA = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  role: ROLE_SCHEMA,
+})
+
+export type InviteByEmailResult =
+  | { status: 'added'; userId: string; membershipId: string }
+  | { status: 'invited'; userId: string }
+  | { status: 'already_member'; userId: string }
+
+/**
+ * Build the redirect URL embedded in Supabase's invite email. Returns
+ * `undefined` when `NEXT_PUBLIC_APP_URL` is unset (Supabase falls back to its
+ * dashboard-configured Site URL — keeps unit tests working without env).
+ *
+ * The redirect ALWAYS lands on `/auth/callback?redirectTo=/onboarding/accept-invite`
+ * so the existing open-redirect guard there sanitises the path AND the
+ * invite-acceptance flow can read `user_metadata.invited_*` before any
+ * tenant-scoped render happens.
+ */
+function buildInviteRedirectUrl(): string | undefined {
+  const base = process.env.NEXT_PUBLIC_APP_URL
+  if (!base) return undefined
+  const url = new URL('/auth/callback', base)
+  url.searchParams.set('redirectTo', '/onboarding/accept-invite')
+  return url.toString()
 }
 
 export function createOrgsService(
@@ -179,6 +225,127 @@ export function createOrgsService(
         payload: { action: 'change_role', role },
       })
       return row
+    },
+
+    /**
+     * Invite a user into the current org by email. Admin-only.
+     *
+     * Two branches:
+     *   - email matches a row in `public.users` → insert the membership
+     *     immediately (no email is sent). The target user's JWT claim is
+     *     refreshed so RLS recognises the new org on their next request.
+     *   - email does NOT match → ask Supabase Auth to send an invite email.
+     *     We embed `invited_org_id` / `invited_role` / `invited_by` in the
+     *     user's `user_metadata` so the accept-invite page can pick them up
+     *     after the auth callback exchanges the code. We also upsert a
+     *     `public.users` mirror so FK joins from the eventual membership
+     *     insert don't fail. Membership is NOT inserted here — that happens
+     *     at accept-time so the JWT claim and the membership row stay in
+     *     lockstep.
+     *
+     * Failures:
+     *   - Non-admin caller → `not_found` (404) per existence-non-disclosure
+     *     invariant.
+     *   - Zod validation failure → `invalid_input`.
+     *   - Supabase admin API failure → `internal` (we deliberately do NOT
+     *     leak the underlying message).
+     */
+    async inviteByEmail(input: { email: string; role: Role }): Promise<InviteByEmailResult> {
+      if (!canManageMemberships(ctx)) {
+        logger.log(LOG_EVENTS.PERMISSION_DENIED, {
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+          action: 'membership.invite',
+        })
+        throw new AppError('not_found', 'Not found')
+      }
+      const parsed = INVITE_INPUT_SCHEMA.safeParse(input)
+      if (!parsed.success) {
+        throw new AppError('invalid_input', 'Invalid email or role')
+      }
+      const { email, role } = parsed.data
+
+      const existing = await repos.users.findByEmail(email)
+      if (existing) {
+        // Existing user — same-org idempotency check, then immediate add.
+        const alreadyMember = await repos.memberships.findForUserAndOrg(
+          existing.id,
+          ctx.orgId,
+        )
+        if (alreadyMember) {
+          logger.log(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+            orgId: ctx.orgId,
+            userId: ctx.userId,
+            targetUserId: existing.id,
+            action: 'invite_existing.noop_already_member',
+          })
+          return { status: 'already_member', userId: existing.id }
+        }
+        const row = await repos.memberships.add({ userId: existing.id, role })
+        logger.log(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+          targetUserId: existing.id,
+          action: 'invite_existing.added',
+          role,
+        })
+        await recordAudit(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+          event: LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED,
+          entityType: 'membership',
+          entityId: row.id,
+          payload: {
+            action: 'invite_existing.added',
+            targetUserId: existing.id,
+            role,
+          },
+        })
+        // DR-PROD-01: target user's claim must include this org.
+        await jwtSyncImpl.syncUserOrgIds(existing.id, logger)
+        return { status: 'added', userId: existing.id, membershipId: row.id }
+      }
+
+      // New user — Supabase sends the invite email with the metadata payload
+      // the accept-invite page will pick up.
+      const admin = getAdminClientImpl()
+      const redirectTo = buildInviteRedirectUrl()
+      const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+        ...(redirectTo ? { redirectTo } : {}),
+        data: {
+          invited_org_id: ctx.orgId,
+          invited_role: role,
+          invited_by: ctx.userId,
+        },
+      })
+      if (error || !data?.user) {
+        logger.log(LOG_EVENTS.PERMISSION_DENIED, {
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+          action: 'membership.invite.supabase_error',
+          error: error?.message ?? 'unknown',
+        })
+        throw new AppError('internal', 'Failed to send invite')
+      }
+      // Mirror the auth user immediately so the accept-invite flow's
+      // membership insert never trips the FK.
+      await repos.users.upsertMirror({ id: data.user.id, email })
+      logger.log(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        targetUserId: data.user.id,
+        action: 'invite_new.email_sent',
+        role,
+      })
+      await recordAudit(LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED, {
+        event: LOG_EVENTS.AUTH_MEMBERSHIP_CHANGED,
+        entityType: 'membership',
+        entityId: data.user.id,
+        payload: {
+          action: 'invite_new.email_sent',
+          targetUserId: data.user.id,
+          role,
+        },
+      })
+      return { status: 'invited', userId: data.user.id }
     },
 
     /**
