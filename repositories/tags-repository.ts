@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray } from 'drizzle-orm'
-import { noteTags, tags, type DbTag, type DbNoteTag } from '@/db/schema'
+import { notes, noteTags, tags, type DbTag, type DbNoteTag } from '@/db/schema'
 import { scopedWhere, withOrgId } from './base-repository'
 import type { AnyDb } from './notes-repository'
 import type { RequestContext } from './types'
@@ -171,6 +171,19 @@ export function createTagsRepository(
             )!,
           )
       }
+
+      // Denormalize tag names into notes.tags_text so the generated
+      // notes.search_tsv (title || content || tags_text) picks them up.
+      // Sorted to keep tag-edit churn deterministic (avoids no-op writes
+      // shifting the column on every save).
+      const tagsText = resolved
+        .map((t) => t.name)
+        .sort()
+        .join(' ')
+      await db
+        .update(notes)
+        .set({ tagsText })
+        .where(scopedWhere(ctx, notes, eq(notes.id, noteId)))
 
       return repo.listForNote(noteId)
     },
