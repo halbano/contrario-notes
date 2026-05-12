@@ -158,6 +158,18 @@ describe('search — tenant isolation + visibility', () => {
     expect(titles).toContain('fruit miscellany')
   })
 
+  it('prefix match: partial term matches a longer word (vitre → vitrectomy)', async () => {
+    const sCarl = createScopedServices(ctxCarl, { db: db as never, logger: silentLogger })
+    const note = await sCarl.notes.createWithVersion({
+      authorId: CARL_A,
+      title: 'Vitrectomy Recovery',
+      content: 'Post-op vitrectomy notes for the patient.',
+      visibility: 'org',
+    })
+    const results = await sCarl.search.query({ query: 'vitre', limit: 50 })
+    expect(results.find((r) => r.id === note.id)).toBeDefined()
+  })
+
   it('input validation: empty query is rejected', async () => {
     const sAlice = createScopedServices(ctxAlice, { db: db as never, logger: silentLogger })
     await expect(sAlice.search.query({ query: '', limit: 50 })).rejects.toMatchObject({

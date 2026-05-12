@@ -16,30 +16,31 @@ export type SearchRepository = {
 }
 
 /**
- * Search repository. Owns the FTS query.
+ * Build a `to_tsquery('simple', …)` argument with per-term `:*` prefix
+ * wildcards so users can match partial words (e.g. `vitre` → `vitrectomy`).
  *
- * Per ADR-0004 and TENANCY_INVARIANTS invariant 4, the WHERE clause is
- * composed from:
- *   1. `visibleNotesPredicate(ctx)` — the org-scoped, visibility-aware
- *      predicate (also used by `repos.notes.listVisible`).
- *   2. `notes.deleted_at IS NULL` — soft-delete filter.
- *   3. `notes.search_tsv @@ plainto_tsquery('simple', $query)` — the FTS hit
- *      condition.
- *
- * Ranking: `ts_rank(notes.search_tsv, plainto_tsquery('simple', $query))`
- * descending, then `updated_at` desc as a deterministic tiebreaker.
- *
- * The `$query` value is bound as a SQL parameter via Drizzle's `sql`
- * template tag — never string-concatenated. Same goes for the userId/orgId
- * inside the visibility predicate.
+ * Strips ts_query operator characters (`& | ! : ( ) \`) from each token to
+ * prevent the user from injecting query operators. Tokens that collapse to
+ * empty after sanitization are dropped. Returns `null` when no usable tokens
+ * remain — caller bypasses FTS and returns no rows.
  */
+export function buildPrefixTsQuery(query: string): string | null {
+  const tokens = query
+    .split(/\s+/)
+    .map((t) => t.replace(/[&|!:()\\*]/g, '').trim())
+    .filter((t) => t.length > 0)
+  if (tokens.length === 0) return null
+  return tokens.map((t) => `${t}:*`).join(' & ')
+}
+
 export function createSearchRepository(
   ctx: RequestContext,
   db: AnyDb,
 ): SearchRepository {
   return {
     async searchVisible(input) {
-      const q = input.query
+      const tsq = buildPrefixTsQuery(input.query)
+      if (tsq === null) return []
       const rows = await db
         .select()
         .from(notes)
@@ -47,12 +48,12 @@ export function createSearchRepository(
           and(
             visibleNotesPredicate(ctx),
             isNull(notes.deletedAt),
-            sql`"notes"."search_tsv" @@ plainto_tsquery('simple', ${q})`,
+            sql`"notes"."search_tsv" @@ to_tsquery('simple', ${tsq})`,
           )!,
         )
         .orderBy(
           desc(
-            sql`ts_rank("notes"."search_tsv", plainto_tsquery('simple', ${q}))`,
+            sql`ts_rank("notes"."search_tsv", to_tsquery('simple', ${tsq}))`,
           ),
           desc(notes.updatedAt),
         )

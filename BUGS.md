@@ -145,6 +145,27 @@ shipped to a production environment.
 
 ## Resolved
 
+### BUG-0021 — Search ignored partial-word matches ("vitre" missed "vitrectomy")
+
+- Reported: 2026-05-12 (user, screenshots on Railway)
+- Severity: medium
+- Surface: `repositories/search-repository.ts`, `/search`.
+- Repro: create note titled `Vitrectomy Recovery`; search `vitre` → 0
+  results. Only the full word `vitrectomy` matched.
+- Root cause: repo built FTS predicate with
+  `plainto_tsquery('simple', $q)`. `simple` dictionary applies no
+  stemming, and `plainto_tsquery` matches whole tokens only — `vitre`
+  is not a token in the lexicon, so no row matched.
+- Fix: switched to `to_tsquery('simple', <built>)` with per-term `:*`
+  prefix wildcards. New `buildPrefixTsQuery()` helper tokenizes on
+  whitespace, strips ts_query operators (`&|!:()\*`), appends `:*` to
+  each token, joins with ` & `. Empty/operator-only input → return [].
+  Commits on `fix/search-prefix-match`.
+- Prevention: added test in `tests/search-isolation.test.ts` —
+  searching `vitre` must return the `Vitrectomy Recovery` note.
+
+---
+
 ### BUG-0001 — `services.notes.listVisible` post-filtered visibility in app code
 
 - Reported: 2026-05-07
