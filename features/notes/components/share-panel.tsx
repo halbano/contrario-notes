@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,9 +12,12 @@ import {
 } from '@/features/notes/server/notes-actions'
 
 /**
- * Panel for managing per-user share grants. The host page does the
- * permission check (only the author or org admin may render this) and
- * passes existing grants in. Add by user id from the org-members list.
+ * Panel for managing per-user share grants. Inputs are emails (Google
+ * Drive-style); we resolve email → userId against the org member list the
+ * host page already loaded. If the email doesn't match a current org
+ * member, surface a hint pointing at the admin invite flow at
+ * /settings/members. The server still enforces `canAttachToNote` /
+ * `canShareNote` checks.
  */
 export interface ShareEntry {
   userId: string
@@ -37,24 +41,56 @@ export interface SharePanelProps {
 export function SharePanel({ noteId, shares, orgMembers }: SharePanelProps) {
   const router = useRouter()
   const [pending, setPending] = React.useState<string | null>(null)
-  const [error, setError] = React.useState<string | null>(null)
-  const [pickedUserId, setPickedUserId] = React.useState<string>('')
+  const [error, setError] = React.useState<React.ReactNode | null>(null)
+  const [email, setEmail] = React.useState('')
   const [canEdit, setCanEdit] = React.useState(false)
 
   const sharedSet = new Set(shares.map((s) => s.userId))
+  const memberByEmail = React.useMemo(() => {
+    const m = new Map<string, OrgMember>()
+    for (const member of orgMembers) {
+      m.set(member.email.toLowerCase(), member)
+    }
+    return m
+  }, [orgMembers])
 
   async function onShare(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!pickedUserId) return
+    const normalized = email.trim().toLowerCase()
+    if (!normalized) return
     setError(null)
+
+    const member = memberByEmail.get(normalized)
+    if (!member) {
+      setError(
+        <>
+          <strong>{email.trim()}</strong> is not a member of this org. Invite
+          them first from{' '}
+          <Link href="/settings/members" className="underline">
+            Settings → Members
+          </Link>
+          .
+        </>,
+      )
+      return
+    }
+    if (sharedSet.has(member.userId)) {
+      setError('That member already has access to this note.')
+      return
+    }
+
     setPending('add')
-    const result = await shareNoteAction({ noteId, userId: pickedUserId, canEdit })
+    const result = await shareNoteAction({
+      noteId,
+      userId: member.userId,
+      canEdit,
+    })
     setPending(null)
     if (!result.ok) {
       setError(result.message ?? 'Unable to share.')
       return
     }
-    setPickedUserId('')
+    setEmail('')
     setCanEdit(false)
     router.refresh()
   }
@@ -76,7 +112,7 @@ export function SharePanel({ noteId, shares, orgMembers }: SharePanelProps) {
       <header>
         <h2 className="text-h3 font-semibold tracking-tight">Sharing</h2>
         <p className="text-small text-muted-foreground">
-          Grant individual org members access to this note.
+          Share with org members by email.
         </p>
       </header>
 
@@ -100,7 +136,7 @@ export function SharePanel({ noteId, shares, orgMembers }: SharePanelProps) {
                   {s.displayName ?? s.email}
                 </p>
                 <p className="truncate text-micro text-muted-foreground">
-                  {s.canEdit ? 'Can edit' : 'Read only'}
+                  {s.email} · {s.canEdit ? 'Can edit' : 'Read only'}
                 </p>
               </div>
               <Button
@@ -118,28 +154,34 @@ export function SharePanel({ noteId, shares, orgMembers }: SharePanelProps) {
 
       <form onSubmit={onShare} className="space-y-3 border-t border-border pt-3">
         <div className="space-y-2">
-          <Label htmlFor="share-user">Add member</Label>
-          <select
-            id="share-user"
-            value={pickedUserId}
-            onChange={(e) => setPickedUserId(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <option value="">Select a member…</option>
-            {orgMembers.map((m) => {
-              const alreadyShared = sharedSet.has(m.userId)
-              const label = m.displayName ?? m.email
-              return (
-                <option
-                  key={m.userId}
-                  value={m.userId}
-                  disabled={alreadyShared}
-                >
-                  {alreadyShared ? `${label} (already shared)` : label}
+          <Label htmlFor="share-email">Email</Label>
+          <Input
+            id="share-email"
+            type="email"
+            inputMode="email"
+            autoComplete="off"
+            placeholder="teammate@yourcompany.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            list="share-email-suggestions"
+            required
+          />
+          <datalist id="share-email-suggestions">
+            {orgMembers
+              .filter((m) => !sharedSet.has(m.userId))
+              .map((m) => (
+                <option key={m.userId} value={m.email}>
+                  {m.displayName ?? m.email}
                 </option>
-              )
-            })}
-          </select>
+              ))}
+          </datalist>
+          <p className="text-micro text-muted-foreground">
+            Must be a current member of this org.{' '}
+            <Link href="/settings/members" className="underline">
+              Invite a new member
+            </Link>{' '}
+            from Settings.
+          </p>
         </div>
         <label className="flex items-center gap-2 text-small">
           <Input
@@ -150,7 +192,7 @@ export function SharePanel({ noteId, shares, orgMembers }: SharePanelProps) {
           />
           Allow editing
         </label>
-        <Button type="submit" disabled={!pickedUserId || pending === 'add'}>
+        <Button type="submit" disabled={!email.trim() || pending === 'add'}>
           {pending === 'add' ? 'Sharing…' : 'Share'}
         </Button>
       </form>
