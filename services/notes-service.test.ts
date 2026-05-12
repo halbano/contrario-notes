@@ -66,6 +66,9 @@ function makeRepos(initialNote: DbNote | null) {
       add: vi.fn(async () => {
         throw new Error('not used')
       }),
+      addIfMissing: vi.fn(async () => {
+        throw new Error('not used')
+      }),
       updateRole: vi.fn(async () => null),
       remove: vi.fn(async () => false),
     },

@@ -111,6 +111,7 @@ function makeRepos(opts: {
       findForCurrentUser: vi.fn(async () => null),
       findForUserAndOrg: vi.fn(async () => null),
       add: vi.fn(),
+      addIfMissing: vi.fn(),
       updateRole: vi.fn(async () => null),
       remove: vi.fn(async () => false),
     },

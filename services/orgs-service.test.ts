@@ -68,6 +68,9 @@ function makeRepos(): Repositories {
       add: vi.fn(async ({ userId, role }) =>
         membership({ userId, role, id: 'm-new' }),
       ),
+      addIfMissing: vi.fn(async ({ userId, role }) =>
+        membership({ userId, role, id: 'm-idem' }),
+      ),
       updateRole: vi.fn(async (id, role) => membership({ id, role })),
       remove: vi.fn(async () => true),
       findById: vi.fn(async (id) => membership({ id })),

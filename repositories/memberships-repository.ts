@@ -57,6 +57,15 @@ export type MembershipsRepository = {
   /** Add a member to the current org. Admin-only at the service layer. */
   add(input: { userId: string; role: Role }): Promise<DbMembership>
 
+  /**
+   * Idempotent variant of `add` used by the invite-accept flow. Inserts
+   * (org_id, user_id, role); when a row for (org_id, user_id) already
+   * exists, leaves it untouched and returns the existing row. This is the
+   * ONLY place an insert may originate from a non-admin caller — accept-
+   * invite always inserts on behalf of the calling user themselves.
+   */
+  addIfMissing(input: { userId: string; role: Role }): Promise<DbMembership>
+
   /** Update a membership's role inside the current org. Admin-only. */
   updateRole(membershipId: string, role: Role): Promise<DbMembership | null>
 
@@ -124,6 +133,30 @@ export function createMembershipsRepository(
         .returning()
       const row = rows[0]
       if (!row) throw new Error('Failed to insert membership')
+      return row
+    },
+
+    async addIfMissing({ userId, role }) {
+      const inserted = await db
+        .insert(memberships)
+        .values({ orgId: ctx.orgId, userId, role })
+        .onConflictDoNothing({
+          target: [memberships.orgId, memberships.userId],
+        })
+        .returning()
+      if (inserted[0]) return inserted[0]
+      const existing = await db
+        .select()
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.orgId, ctx.orgId),
+            eq(memberships.userId, userId),
+          )!,
+        )
+        .limit(1)
+      const row = existing[0]
+      if (!row) throw new Error('addIfMissing: row missing after insert')
       return row
     },
 
