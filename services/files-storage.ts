@@ -17,8 +17,12 @@ export interface FileStorage {
   createSignedUrl(path: string, expiresInSeconds: number): Promise<string>
 }
 
-/** The single private bucket. Configure via Supabase dashboard. */
-export const FILES_BUCKET = process.env.SUPABASE_FILES_BUCKET ?? 'note-files'
+/**
+ * The single private bucket. Match the bucket provisioned in the Supabase
+ * dashboard (default name: `notes`). Override via env when running against
+ * a different project layout.
+ */
+export const FILES_BUCKET = process.env.SUPABASE_FILES_BUCKET ?? 'notes'
 
 /** Hard cap — TTL must never exceed this. */
 export const MAX_SIGNED_URL_TTL_SECONDS = 300
