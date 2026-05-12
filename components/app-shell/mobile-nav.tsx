@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/sheet'
 import { SideNav } from './side-nav'
 import { Logo } from '@/components/brand/logo'
-import { OrgSwitcherSlot } from './org-switcher-slot'
 
 /**
  * Mobile nav drawer. Wraps the same `SideNav` content used at desktop
@@ -22,8 +21,12 @@ import { OrgSwitcherSlot } from './org-switcher-slot'
  *
  * Layout: header (logo) -> org switcher slot -> primary nav -> secondary
  * (Settings) pinned to bottom via the inner `SideNav` flex column.
+ *
+ * `orgSwitcher` is passed as a prop because it's an async server component
+ * (data-driven dropdown — VAL-14); client components can't render those
+ * directly, but can render them as children.
  */
-export function MobileNav() {
+export function MobileNav({ orgSwitcher }: { orgSwitcher: React.ReactNode }) {
   const [open, setOpen] = React.useState(false)
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -46,9 +49,7 @@ export function MobileNav() {
             <Logo />
           </SheetTitle>
         </SheetHeader>
-        <div className="border-b border-border p-3">
-          <OrgSwitcherSlot />
-        </div>
+        <div className="border-b border-border p-3">{orgSwitcher}</div>
         <SideNav onNavigate={() => setOpen(false)} className="flex-1" />
       </SheetContent>
     </Sheet>

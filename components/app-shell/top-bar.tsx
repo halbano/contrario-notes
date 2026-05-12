@@ -19,7 +19,7 @@ import { UserMenuSlot } from './user-menu-slot'
 export function TopBar() {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/75 md:px-6">
-      <MobileNav />
+      <MobileNav orgSwitcher={<OrgSwitcherSlot />} />
       <div className="flex flex-1 items-center gap-3">
         <Logo />
         <div className="ml-2 hidden md:block">
