@@ -198,6 +198,27 @@ describe('buildStoragePath', () => {
     const p = buildStoragePath({ orgId: 'org-A', noteId: null, fileId: 'f-1', filename: 'x.pdf' })
     expect(p).toBe('org/org-A/standalone/f-1-x.pdf')
   })
+  it('replaces spaces + other non-key-safe chars with underscores', () => {
+    // Regression: Supabase Storage rejected keys containing spaces with
+    // `Invalid key`. Real prod repro: macOS screenshot filename with
+    // spaces + colons.
+    const p = buildStoragePath({
+      orgId: 'org-A',
+      noteId: 'n-1',
+      fileId: 'f-1',
+      filename: 'Screenshot 2026-05-12 at 12.06.14 AM.png',
+    })
+    expect(p).toBe('org/org-A/note/n-1/f-1-Screenshot_2026-05-12_at_12.06.14_AM.png')
+  })
+  it('collapses repeated unsafe-char runs to a single underscore', () => {
+    const p = buildStoragePath({
+      orgId: 'org-A',
+      noteId: 'n-1',
+      fileId: 'f-1',
+      filename: 'weird !!! name.pdf',
+    })
+    expect(p).toBe('org/org-A/note/n-1/f-1-weird_name.pdf')
+  })
 })
 
 describe('upload — validation', () => {
