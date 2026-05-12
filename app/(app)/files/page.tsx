@@ -4,11 +4,17 @@ import { EmptyState } from '@/components/states'
 import { getRequestContext } from '@/lib/auth-context'
 import { createScopedServices } from '@/services'
 import { FileList, type FileListItem } from '@/features/files/components/file-list'
+import { FileUploadPanel } from '@/features/files/components/file-upload-panel'
 
 export default async function FilesPage() {
   const ctx = await getRequestContext()
   const services = createScopedServices(ctx)
-  const files = await services.files.listVisible()
+  const [files, visibleNotes] = await Promise.all([
+    services.files.listVisible(),
+    // 200 is a reasonable ceiling for the dropdown — for orgs with more
+    // notes, users still upload from the note's detail page.
+    services.notes.listVisible({ limit: 200 }),
+  ])
 
   // Resolve note titles for files attached to a note. Each note id is
   // service-permission-checked already (listVisible filters out files
@@ -34,6 +40,9 @@ export default async function FilesPage() {
     createdAt: f.createdAt.toISOString(),
   }))
 
+  const canUpload = ctx.role !== 'viewer'
+  const pickerNotes = visibleNotes.map((n) => ({ id: n.id, title: n.title }))
+
   return (
     <div className="space-y-8">
       <header className="space-y-2">
@@ -43,11 +52,18 @@ export default async function FilesPage() {
           Uploads attached to notes, accessed via short-lived signed URLs.
         </p>
       </header>
+
+      {canUpload ? <FileUploadPanel notes={pickerNotes} /> : null}
+
       {items.length === 0 ? (
         <EmptyState
           icon={FolderOpen}
           title="No files yet"
-          description="Upload a file from any note's detail page to see it here."
+          description={
+            canUpload
+              ? 'Upload above or attach a file from any note’s detail page.'
+              : 'Files attached to notes you can read will appear here.'
+          }
         />
       ) : (
         <FileList files={items} />

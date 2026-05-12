@@ -83,30 +83,45 @@ export default async function NoteDetailPage({
             initialTags={attachedTags}
             tagSuggestions={tagSuggestions}
             showDelete={isOwner || ctx.role === 'admin'}
+            attachmentsSlot={
+              <FileAttachments
+                noteId={id}
+                canWrite={canWriteFiles}
+                files={attachedFiles.map((f) => ({
+                  id: f.id,
+                  filename: f.filename,
+                  mimeType: f.mimeType,
+                  sizeBytes: f.sizeBytes,
+                  uploaderId: f.uploaderId,
+                  createdAt: f.createdAt.toISOString(),
+                }))}
+              />
+            }
           />
         ) : (
-          <article className="space-y-3 rounded-lg border border-border bg-card p-4">
-            <p className="whitespace-pre-wrap text-body">{note.content}</p>
-            {attachedTags.length > 0 ? (
-              <p className="text-small text-muted-foreground">
-                Tags: {attachedTags.join(', ')}
-              </p>
-            ) : null}
-          </article>
+          <>
+            <article className="space-y-3 rounded-lg border border-border bg-card p-4">
+              <p className="whitespace-pre-wrap text-body">{note.content}</p>
+              {attachedTags.length > 0 ? (
+                <p className="text-small text-muted-foreground">
+                  Tags: {attachedTags.join(', ')}
+                </p>
+              ) : null}
+            </article>
+            <FileAttachments
+              noteId={id}
+              canWrite={canWriteFiles}
+              files={attachedFiles.map((f) => ({
+                id: f.id,
+                filename: f.filename,
+                mimeType: f.mimeType,
+                sizeBytes: f.sizeBytes,
+                uploaderId: f.uploaderId,
+                createdAt: f.createdAt.toISOString(),
+              }))}
+            />
+          </>
         )}
-
-        <FileAttachments
-          noteId={id}
-          canWrite={canWriteFiles}
-          files={attachedFiles.map((f) => ({
-            id: f.id,
-            filename: f.filename,
-            mimeType: f.mimeType,
-            sizeBytes: f.sizeBytes,
-            uploaderId: f.uploaderId,
-            createdAt: f.createdAt.toISOString(),
-          }))}
-        />
       </div>
 
       {canShare ? (
