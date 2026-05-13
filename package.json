@@ -16,7 +16,8 @@
     "check:nav": "tsx scripts/check-nav.ts",
     "smoke": "tsx scripts/smoke.ts",
     "seed": "tsx scripts/seed/index.ts",
-    "seed:reset": "tsx scripts/seed/index.ts --reset"
+    "seed:reset": "tsx scripts/seed/index.ts --reset",
+    "admin:create-user": "tsx scripts/create-admin-user.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
