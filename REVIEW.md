@@ -261,3 +261,79 @@ explicitly deferred to TODO.md tracking.
   small enough that this is invisible, but at >10k notes per org I
   would want EXPLAIN ANALYZE numbers and possibly a fallback to plain
   `plainto_tsquery` for whole-token queries.
+
+---
+
+## 2026-05-13 addendum — late-cycle review notes
+
+### What I reviewed deeply in this session
+
+- **`services/notes-service.ts` permission-view projection** (PR #52).
+  Verified that `permissionViewForRead` only fires the
+  `repos.noteShares.has` lookup when it actually matters
+  (`visibility === 'shared'` AND caller is not the author). Confirmed
+  that the four read-path call sites (`findById`, `listVersions`,
+  `diffVersions`, `listTagsForNote`) were updated and that the
+  write-path call sites (`updateWithVersion`, `remove`, `setNoteTags`,
+  `shareNote` author lookup) still use the unenriched
+  `toPermissionView` — correct, because `canUpdate / canDelete` rules
+  do not depend on share grants. Regression test exercises the exact
+  pre-merge failure mode (peer + grant + `findById`).
+- **`scripts/create-admin-user.ts`** (PR #51). Audited that the
+  service-role key is read from env only (never logged), that the
+  password is echoed back at the end of the script (acceptable for an
+  operator-local tool but flagged below), and that the `public.users`
+  mirror + `app_metadata.org_ids` claim sync happen in the right
+  order so the user's first sign-in carries RLS-eligible state. The
+  interactive-mode password masking via the `_writeToOutput` patch is
+  a documented stdlib pattern — fine for a local script, not a
+  hardening primitive.
+
+### What I distrusted in this session
+
+- **In-memory permission-view projections.** The
+  `toPermissionView → canReadNote` two-step is a recurring blind spot:
+  the SQL predicate is the source of truth, the in-memory mirror is
+  convenience. BUG-0022 was exactly that: SQL correct, in-memory wrong,
+  read-by-id path 404'd. PR #52 patches the symptom by enriching the
+  projection when needed, but the structural fix (collapse the two
+  layers so the `shared` branch cannot be reached without the grant
+  list) is queued as a follow-up. Worth a targeted audit of every
+  `NoteForPermission`-shaped projection in the codebase.
+- **Service-role keys in operator scripts.** PR #51 reads
+  `SUPABASE_SERVICE_ROLE_KEY` from env. Any contributor who runs the
+  script locally holds full DB admin for that session. Documented in
+  the script's header comment (`SECURITY:` block) — not a vulnerability,
+  but an operational risk that should live next to a runbook entry on
+  key rotation cadence.
+
+### What I would review next with more time
+
+- **End-to-end cross-user smoke (DR-05).** Two-user, two-org Playwright
+  scenario hitting the real Railway URL: assert visibility, share
+  grants, cross-org 404, and the sign-out + sign-in JWT refresh path.
+  pglite covers the SQL layer; the real session-cookie + JWT-claim
+  combo is uncovered today. BUG-0022 + BUG-0025 would have been caught
+  by this.
+- **`/auth/reset-password` page** (BUG-0023). Small fix, but blocks the
+  password-reset story end-to-end. Sketch in BUGS.md.
+- **Sign-out scope** (BUG-0025). One-line change with a behavioural
+  trade-off worth a second opinion: local-scope clears the cookie
+  immediately but leaves refresh tokens valid on other sessions until
+  natural expiry.
+- **Audit-log wiring on AI** (AI-05). Still missing
+  `ai.summary_requested / completed / failed` events in
+  `services/ai-service.ts`. Low risk, ~20 LOC.
+
+### Defects found post-merge, by surface
+
+| Surface | Caught by | Bug | Fixed in |
+|---|---|---|---|
+| `services/notes-service.ts` `toPermissionView` | manual cloud walkthrough | BUG-0022 | PR #52 |
+| `app/auth/callback/route.ts` recovery branch | manual cloud walkthrough | BUG-0023 | open |
+| Supabase SMTP defaults | cloud audit logs | BUG-0024 | open (infra/config) |
+| `features/auth/server/auth-server.ts` signOut | user-reported latency | BUG-0025 | open |
+
+Pattern continues: every late-cycle defect was surfaced by walking the
+deployed app under realistic conditions. None of them were
+test-discoverable in the suite as it stood.

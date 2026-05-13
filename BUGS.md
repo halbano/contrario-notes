@@ -116,6 +116,75 @@ shipped to a production environment.
   Migration + service extension.
 - Prevention: pglite isolation test extension once schema lands.
 
+### BUG-0023 — Password reset has no new-password landing page
+
+- Reported: 2026-05-13 (orchestrator, demo prep)
+- Severity: medium
+- Surface: `/forgot-password`, `/auth/callback`, missing
+  `/auth/reset-password`.
+- Repro: request a reset → click email link → land on `/` already
+  signed in via the recovery session → no prompt to set a new password
+  → recovery session expires unused → old password still works.
+- Root cause: `requestPasswordReset` redirects through
+  `/auth/callback?type=recovery&redirectTo=/`. The callback exchanges
+  the code (good) but ignores `type` and redirects to `redirectTo`. No
+  route exists that prompts for a new password and calls
+  `supabase.auth.updateUser({ password })`.
+- Fix: pending. Plan:
+  - New page `app/auth/reset-password/page.tsx` with new-password +
+    confirm form.
+  - Server action `setNewPasswordAction` →
+    `supabase.auth.updateUser({ password })`.
+  - Callback branch: if `type === 'recovery'`, redirect to
+    `/auth/reset-password` regardless of `redirectTo`.
+  - On success: sign out + redirect `/sign-in?reset=ok`.
+- Prevention: smoke test against a real recovery session (requires
+  custom SMTP — BUG-0024).
+
+### BUG-0024 — Supabase default SMTP only delivers to team emails + 3-4/hr cap
+
+- Reported: 2026-05-13 (orchestrator, audit logs on Railway)
+- Severity: medium (operational)
+- Surface: every auth email flow — signup confirm, recovery, invite.
+- Repro: trigger >3-4 `auth.password_reset_requested` or
+  `auth.signup` events in an hour → subsequent emails are silently
+  dropped. Even within budget, non-team-member emails never arrive.
+  App-side logs show success because the server-side call returns ok.
+- Root cause: Supabase's default SMTP enforces both a per-project hourly
+  cap AND a recipient allow-list restricted to the Supabase
+  organization's team members. Documented dimly; bites every demo.
+- Fix: pending. Configure custom SMTP (Resend / Postmark / SES) in
+  Supabase Dashboard → Authentication → SMTP Settings. Removes both
+  limits.
+- Prevention: pre-demo runbook checklist item; ops verification before
+  any external evaluator handoff. Also: short-circuit script
+  (`scripts/create-admin-user.ts`) bypasses the email path entirely
+  using `admin.auth.admin.createUser({ email_confirm: true })` —
+  see PR #51.
+
+### BUG-0025 — `signOutAction` slow under Railway → cloud Supabase
+
+- Reported: 2026-05-13 (user, observed during demo prep)
+- Severity: low (UX)
+- Surface: `features/auth/server/auth-server.ts:124`.
+- Repro: click avatar → Sign out. Wait 1-3 s for redirect.
+- Root cause: two sequential Supabase Auth roundtrips per sign-out:
+  1. `supabase.auth.getUser()` — used only to grab `user.id` for the
+     audit log line.
+  2. `supabase.auth.signOut()` — defaults to `scope: 'global'`,
+     contacting Supabase Auth to revoke ALL refresh tokens for the user.
+  Cross-region latency dominates. Then the redirect triggers another
+  `getUser()` on the next page.
+- Fix: pending. Plan:
+  - Use `supabase.auth.signOut({ scope: 'local' })` — clears cookie /
+    session locally without the global revocation roundtrip.
+  - Keep a separate `signOutAllSessions()` path that retains
+    `scope: 'global'` for an explicit "log out everywhere" affordance.
+- Prevention: timing test against a representative latency budget
+  (<300 ms for the local-scope variant). Not security-relevant — the
+  cookie is still cleared, and refresh tokens expire naturally on the
+  configured JWT TTL (15 min per RUNBOOK).
+
 ### BUG-0020 — JWT propagation latency on `addMember` / first-org create
 
 - Reported: 2026-05-09 (auth-agent DR-PROD-01 open question, surfaced during PR #20)
@@ -144,6 +213,39 @@ shipped to a production environment.
 ---
 
 ## Resolved
+
+### BUG-0022 — Shared-note `findById` 404'd grantees (in-memory permission view dropped `sharedWithUserIds`)
+
+- Reported: 2026-05-13 (orchestrator, walking PR #49 share-by-email on Railway)
+- Severity: high (functional)
+- Surface: `services/notes-service.ts` `toPermissionView` /
+  `findById` / `listVersions` / `diffVersions` / `listTagsForNote`.
+- Repro: as admin in org A, share a `visibility=shared` note with
+  another member of org A via the new SharePanel. Sign in as the
+  grantee. Open `/notes/<id>` → 404. Cloud audit log line shows
+  `event: permission.denied / action: note.read` even though the
+  `note_shares` row was committed and the predicate-based queries
+  (`listVisible`, search) DID surface the note.
+- Root cause: `toPermissionView(row)` projected only
+  `orgId / authorId / visibility` from `DbNote` and never loaded
+  `sharedWithUserIds`. `canReadNote`'s `shared` branch read an
+  undefined list and rejected every non-author caller. The SQL
+  `visibleNotesPredicate` was always correct — that's why
+  `listVisible` and FTS worked — masking the bug on the read-by-id
+  path used by the note-detail page, version history, diff view, and
+  tag listing.
+- Fix: PR #52 — new `permissionViewForRead(note)` helper inside
+  `services.notes`. For `shared` visibility when caller is not the
+  author, it loads `repos.noteShares.has(noteId, userId)` (single
+  PK lookup) and feeds the result into `canReadNote`. All four
+  read-path call sites updated.
+- Prevention: regression test in `tests/notes-shares.test.ts` —
+  "granted user can findById a shared note". Worth a follow-up:
+  audit every other call site that builds a `NoteForPermission`
+  manually, and ideally collapse the projection layer so the
+  `shared` branch cannot be reached without the grant list.
+
+---
 
 ### BUG-0021 — Search ignored partial-word matches ("vitre" missed "vitrectomy")
 

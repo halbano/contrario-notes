@@ -194,3 +194,25 @@ Pattern: **once the codebase is mature and conventions are
 established, the orchestrator + Edit/Write/Bash tools beat a fresh
 agent on round-trip latency for sub-100-LOC fixes**. Agents pay off
 when the task is large enough to amortize the prompt-design cost.
+
+---
+
+## 2026-05-13 addendum — late-cycle work (no agents)
+
+Three more PRs landed inline. Same orchestrator-direct pattern as the
+2026-05-12 addendum — sub-100-LOC scopes don't justify an agent
+round-trip once project conventions are settled.
+
+| PR | Surface | LOC | Why no agent |
+|---|---|---|---|
+| #51 — admin:create-user script | `scripts/create-admin-user.ts`, `package.json` | ~250 (incl. interactive mode) | New isolated file. Conventions for Drizzle + Supabase admin client already established in seed pipeline; copy-and-adapt was faster than briefing an agent. |
+| #52 — shared-note findById fix (BUG-0022) | `services/notes-service.ts` + regression test | ~70 | Single file diagnosis driven by reading the cloud audit log + the in-memory permission view in tandem. Agent dispatch would have lost the diagnostic context. |
+| #53 — late-cycle doc addenda | `BUGS.md`, `NOTES.md`, `AI_USAGE.md`, `REVIEW.md` | doc only | Self. |
+
+**Pattern reinforcement:** the bug behind PR #52 was found by *walking
+the deployed app while demo-prepping*, not by tests. Mirrors the
+earlier "manual cloud walkthrough is non-negotiable" point. Mocked
+tests in agent-authored PRs (#47 invite, #49 share-by-email) didn't
+exercise the `findById` → `toPermissionView` → `canReadNote` path with
+a non-author grantee in the same request. The fix is small; the gap
+in process is bigger and is now captured as DR-05.
