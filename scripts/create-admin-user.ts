@@ -30,10 +30,22 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import { eq } from 'drizzle-orm'
+import { randomBytes } from 'node:crypto'
+import * as readline from 'node:readline/promises'
+import { stdin as input, stdout as output } from 'node:process'
 import { memberships, organizations, users as usersTable } from '@/db/schema'
 import { ORG_FIXTURES } from './seed/generators/orgs'
 
 type Role = 'admin' | 'member' | 'viewer'
+const ROLES: readonly Role[] = ['admin', 'member', 'viewer']
+
+interface RawArgs {
+  email: string | null
+  password: string | null
+  org: string | null
+  role: Role | null
+  interactive: boolean
+}
 
 interface Args {
   email: string
@@ -42,22 +54,28 @@ interface Args {
   role: Role
 }
 
-function parseArgs(argv: string[]): Args {
-  const out: Partial<Args> = { org: null, role: 'admin' }
+function parseArgs(argv: string[]): RawArgs {
+  const out: RawArgs = {
+    email: null,
+    password: null,
+    org: null,
+    role: null,
+    interactive: false,
+  }
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i]
     const next = argv[i + 1]
     switch (flag) {
       case '--email':
-        out.email = next
+        out.email = next ?? null
         i++
         break
       case '--password':
-        out.password = next
+        out.password = next ?? null
         i++
         break
       case '--org':
-        out.org = next
+        out.org = next ?? null
         i++
         break
       case '--role':
@@ -66,6 +84,10 @@ function parseArgs(argv: string[]): Args {
         }
         out.role = next
         i++
+        break
+      case '--interactive':
+      case '-i':
+        out.interactive = true
         break
       case '--help':
       case '-h':
@@ -77,9 +99,135 @@ function parseArgs(argv: string[]): Args {
         }
     }
   }
-  if (!out.email) throw new Error('--email is required')
-  if (!out.password) throw new Error('--password is required')
-  return out as Args
+  return out
+}
+
+/**
+ * Decide whether to enter interactive mode. Explicit `--interactive`
+ * always wins. Otherwise: TTY available AND a required field is missing.
+ */
+function shouldPrompt(raw: RawArgs): boolean {
+  if (raw.interactive) return true
+  if (!input.isTTY) return false
+  return !raw.email || !raw.password
+}
+
+/**
+ * Read a line, hiding echoed characters. Used for password input.
+ * Implementation: monkey-patch the readline interface's internal
+ * `_writeToOutput` so each keystroke writes a single `*` instead of the
+ * actual character. Stdlib-only — no `inquirer`/`prompts` dependency.
+ */
+async function askHidden(rl: readline.Interface, prompt: string): Promise<string> {
+  output.write(prompt)
+  const iface = rl as unknown as {
+    _writeToOutput: (s: string) => void
+    output: NodeJS.WritableStream
+  }
+  const orig = iface._writeToOutput
+  iface._writeToOutput = (s: string) => {
+    if (s === '\r\n' || s === '\n' || s === '\r') {
+      iface.output.write(s)
+    } else {
+      iface.output.write('*'.repeat(s.length))
+    }
+  }
+  try {
+    return await rl.question('')
+  } finally {
+    iface._writeToOutput = orig
+  }
+}
+
+function generatePassword(): string {
+  // 16 url-safe-ish chars; mixed case + digits + symbol via prefix.
+  const raw = randomBytes(12).toString('base64').replace(/[+/=]/g, '')
+  return `Demo!${raw}`
+}
+
+async function promptForArgs(raw: RawArgs): Promise<Args> {
+  const rl = readline.createInterface({ input, output })
+  try {
+    output.write('\nInteractive mode. Press Ctrl-C to abort.\n\n')
+
+    let email = raw.email ?? ''
+    while (!email || !/^.+@.+\..+$/.test(email)) {
+      email = (await rl.question('Email: ')).trim()
+      if (!email) email = ''
+    }
+
+    let password = raw.password ?? ''
+    if (!password) {
+      const auto = (
+        await rl.question('Generate a random password? [Y/n] ')
+      )
+        .trim()
+        .toLowerCase()
+      if (auto === '' || auto === 'y' || auto === 'yes') {
+        password = generatePassword()
+        output.write(`(generated) ${password}\n`)
+      } else {
+        while (password.length < 8) {
+          password = await askHidden(rl, 'Password (min 8 chars): ')
+        }
+      }
+    }
+
+    output.write('\nSeeded org slugs:\n')
+    for (const o of ORG_FIXTURES) output.write(`  - ${o.slug} (${o.name})\n`)
+    output.write("  - (leave blank to skip — user lands on /onboarding/create-org)\n")
+    let org = raw.org ?? ''
+    if (!org) {
+      const answer = (await rl.question('Org slug [blank to skip]: ')).trim()
+      org = answer
+    }
+    const validSlugs = new Set(ORG_FIXTURES.map((o) => o.slug))
+    while (org && !validSlugs.has(org)) {
+      output.write(`  unknown slug: ${org}\n`)
+      org = (await rl.question('Org slug [blank to skip]: ')).trim()
+    }
+
+    let role: Role = raw.role ?? 'admin'
+    if (org) {
+      const answer = (
+        await rl.question(`Role [admin/member/viewer] (default ${role}): `)
+      )
+        .trim()
+        .toLowerCase()
+      if (answer && ROLES.includes(answer as Role)) {
+        role = answer as Role
+      }
+    }
+
+    output.write('\nReview:\n')
+    output.write(`  email:    ${email}\n`)
+    output.write(`  password: ${'*'.repeat(password.length)} (${password.length} chars)\n`)
+    output.write(`  org:      ${org || '(none — onboarding flow)'}\n`)
+    output.write(`  role:     ${org ? role : '(n/a — no org)'}\n`)
+    const confirm = (
+      await rl.question('\nProceed? [Y/n] ')
+    )
+      .trim()
+      .toLowerCase()
+    if (confirm && confirm !== 'y' && confirm !== 'yes') {
+      throw new Error('Aborted by user')
+    }
+
+    return { email, password, org: org || null, role }
+  } finally {
+    rl.close()
+  }
+}
+
+function finalizeNonInteractive(raw: RawArgs): Args {
+  if (!raw.email) throw new Error('--email is required (or run with --interactive)')
+  if (!raw.password) throw new Error('--password is required (or run with --interactive)')
+  return {
+    email: raw.email,
+    password: raw.password,
+    org: raw.org,
+    role: raw.role ?? 'admin',
+  }
 }
 
 function printUsageAndExit(code: number): never {
@@ -87,7 +235,10 @@ function printUsageAndExit(code: number): never {
     [
       'Usage:',
       '  tsx scripts/create-admin-user.ts \\',
-      '    --email <addr> --password <pw> [--org <slug>] [--role admin|member|viewer]',
+      '    [--email <addr>] [--password <pw>] [--org <slug>] [--role admin|member|viewer] [--interactive]',
+      '',
+      'Run with no flags inside a TTY to enter interactive mode. Use',
+      '--interactive (-i) to force the prompt even when all flags are supplied.',
       '',
       'Env required:',
       '  SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)',
@@ -215,7 +366,10 @@ async function syncOrgIdsClaim(
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2))
+  const raw = parseArgs(process.argv.slice(2))
+  const args = shouldPrompt(raw)
+    ? await promptForArgs(raw)
+    : finalizeNonInteractive(raw)
   const env = loadEnv()
   const admin = createClient(env.supabaseUrl, env.serviceRole, {
     auth: { persistSession: false, autoRefreshToken: false },
