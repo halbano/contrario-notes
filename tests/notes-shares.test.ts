@@ -181,6 +181,39 @@ describe('note_shares — permissions', () => {
     ).rejects.toMatchObject({ code: 'invalid_input' })
   })
 
+  it('granted user can findById a shared note (regression: shared-note 404)', async () => {
+    // Regression for the May-2026 bug where `toPermissionView` omitted
+    // `sharedWithUserIds`, so `services.notes.findById` returned null on
+    // shared notes for everyone except the author — even when the share
+    // grant existed in `note_shares`. listVisible used the SQL predicate
+    // so it always worked, masking the issue.
+    const author = createScopedServices(ctxMemberA, {
+      db: db as never,
+      logger: silentLogger,
+    })
+    const note = await author.notes.createWithVersion({
+      authorId: MEMBER_A,
+      title: 'findById-after-grant',
+      content: 'body',
+      visibility: 'shared',
+    })
+    const peer = createScopedServices(ctxMemberA2, {
+      db: db as never,
+      logger: silentLogger,
+    })
+    // Before grant — findById returns null for the peer.
+    expect(await peer.notes.findById(note.id)).toBeNull()
+
+    await author.notes.shareNote({
+      noteId: note.id,
+      userId: MEMBER_A2,
+      canEdit: false,
+    })
+
+    const found = await peer.notes.findById(note.id)
+    expect(found?.id).toBe(note.id)
+  })
+
   it('granting a shared note makes it appear in the grantees listVisible', async () => {
     const author = createScopedServices(ctxMemberA, {
       db: db as never,
