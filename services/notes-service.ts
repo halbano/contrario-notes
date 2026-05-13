@@ -15,7 +15,15 @@ import { LOG_EVENTS, type Logger } from '@/logging'
 import type { AuditWriter } from '@/logging/audit'
 import { diffLines } from 'diff'
 
-/** Minimum projection the permission layer needs from a note row. */
+/**
+ * Minimum projection the permission layer needs from a note row.
+ *
+ * NB: this projection deliberately omits `sharedWithUserIds`. For `shared`
+ * visibility you MUST go through `permissionViewForRead(row)` below, which
+ * loads the grant for the caller. Using this projection directly is fine
+ * for write-path checks (`canUpdateNote` / `canDeleteNote`) because those
+ * rules don't depend on share grants.
+ */
 function toPermissionView(n: DbNote): NoteForPermission {
   return {
     orgId: n.orgId,
@@ -53,6 +61,29 @@ export function createNotesService(
   logger: Logger,
   audit?: AuditWriter,
 ) {
+  /**
+   * Read-path permission view. For `shared` visibility, augments the base
+   * projection with whether the current user has a `note_shares` grant on
+   * `noteId`. Without this enrichment `canReadNote` cannot know about the
+   * grant and falls through to `denied`.
+   *
+   * Skips the extra lookup when the caller is the author (canReadNote
+   * short-circuits on author match) or when visibility is `private`/`org`
+   * (share grants are irrelevant).
+   */
+  async function permissionViewForRead(
+    note: DbNote,
+  ): Promise<NoteForPermission> {
+    if (note.visibility !== 'shared' || ctx.userId === note.authorId) {
+      return toPermissionView(note)
+    }
+    const hasGrant = await repos.noteShares.has(note.id, ctx.userId)
+    return {
+      ...toPermissionView(note),
+      sharedWithUserIds: hasGrant ? [ctx.userId] : [],
+    }
+  }
+
   /** Fire-and-forget helper that no-ops when no audit writer is wired. */
   async function recordAudit(
     event: Parameters<NonNullable<typeof audit>>[0],
@@ -110,7 +141,7 @@ export function createNotesService(
     async findById(id: string): Promise<DbNote | null> {
       const row = await repos.notes.findById(id)
       if (!row) return null
-      if (!canReadNote(ctx, toPermissionView(row))) {
+      if (!canReadNote(ctx, await permissionViewForRead(row))) {
         logger.log(LOG_EVENTS.PERMISSION_DENIED, {
           orgId: ctx.orgId,
           userId: ctx.userId,
@@ -307,7 +338,7 @@ export function createNotesService(
     /** Versions for a note the caller may read. */
     async listVersions(noteId: string): Promise<DbNoteVersion[]> {
       const note = await repos.notes.findById(noteId)
-      if (!note || !canReadNote(ctx, toPermissionView(note))) return []
+      if (!note || !canReadNote(ctx, await permissionViewForRead(note))) return []
       return repos.noteVersions.listForNote(noteId)
     },
 
@@ -318,7 +349,7 @@ export function createNotesService(
       versionBId: string,
     ): Promise<VersionDiff | null> {
       const note = await repos.notes.findById(noteId)
-      if (!note || !canReadNote(ctx, toPermissionView(note))) return null
+      if (!note || !canReadNote(ctx, await permissionViewForRead(note))) return null
       const pair = await repos.noteVersions.findPair(
         noteId,
         versionAId,
@@ -361,7 +392,7 @@ export function createNotesService(
     /** Tags attached to a note the caller may read. */
     async listTagsForNote(noteId: string): Promise<DbTag[]> {
       const note = await repos.notes.findById(noteId)
-      if (!note || !canReadNote(ctx, toPermissionView(note))) return []
+      if (!note || !canReadNote(ctx, await permissionViewForRead(note))) return []
       return repos.tags.listForNote(noteId)
     },
 
