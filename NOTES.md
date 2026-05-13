@@ -872,3 +872,72 @@ independently; no migration churn.
 - AI-05 audit wiring (services/ai-service.ts — record summary_requested
   / completed / failed events).
 - DR-05 cloud RLS smoke (two-user cross-org check against Railway).
+
+---
+
+## 2026-05-13 — Demo-prep walkthrough surfaced 4 prod gaps
+
+Walking the deployed Railway app while building the demo script
+exposed four prod-only defects that the test suite hadn't caught:
+
+### 1. Shared-note `findById` 404 — BUG-0022, PR #52
+
+Admin-granted share on a `visibility=shared` note still 404'd the
+grantee. Cloud audit log: `permission.denied / note.read` even though
+the share row was committed. Diagnosed in-session: `toPermissionView`
+projected `orgId/authorId/visibility` but never `sharedWithUserIds`.
+The SQL predicate (`permissions/note-visibility-sql.ts`) was correct
+— `listVisible` and FTS surfaced the note — but `findById` ran the
+in-memory `canReadNote` against the unenriched projection. Fix:
+`permissionViewForRead(note)` that loads `repos.noteShares.has(...)`
+for shared visibility + non-author caller. Regression test in
+`tests/notes-shares.test.ts`. 331/331 tests on main after merge.
+
+### 2. Password reset has no new-password page — BUG-0023
+
+`requestPasswordReset` redirects through
+`/auth/callback?type=recovery&redirectTo=/`. Callback exchanges the
+code, ignores `type`, redirects to `/`. User lands signed in via the
+recovery session but never gets prompted to set a new password. Fix
+sketch in BUGS.md — new page + action + callback branch. Not landed
+yet (deferred behind SMTP unblock).
+
+### 3. Supabase default SMTP team-only + rate cap — BUG-0024
+
+Audit log: `auth.signup_failed / context.reason: email rate limit
+exceeded`. Discovered the dual restriction: default SMTP caps at 3-4
+emails/hr AND only delivers to project team-member addresses. Seed
+emails (`*@seed.contrario.dev`) and any external evaluator address are
+silently dropped. Server returns ok regardless (correct from a
+email-enumeration-defense standpoint). Runbook item: configure custom
+SMTP (Resend or similar) before any external handoff.
+
+### 4. Sign-out latency — BUG-0025
+
+`signOutAction` takes 1-3 s under Railway → cloud Supabase. Two
+sequential roundtrips per click: `getUser()` (only used for the audit
+log userId) + `signOut()` defaulting to `scope: 'global'` (server-side
+refresh-token revocation). Fix sketch: use `scope: 'local'` for the
+default sign-out path; keep `global` for an explicit "sign out
+everywhere" affordance.
+
+### Unblocker shipped same day — PR #51 admin user script
+
+Because BUG-0024 made the default email path unusable for demo
+emails, built `scripts/create-admin-user.ts` (+ `npm run
+admin:create-user`). Service-role admin path:
+`admin.auth.admin.createUser({ email_confirm: true })` → mirror in
+`public.users` → optional membership insert + `app_metadata.org_ids`
+JWT claim sync. Interactive mode (prompts for email / password /
+org / role with a final review) landed in a follow-up commit.
+Idempotent: re-run resets password + ensures membership without
+duplicates.
+
+### Process note
+
+Two of these (#1, #4) would have been caught by an end-to-end smoke
+against the real Railway URL with multiple distinct user identities.
+The pglite isolation suite covers the SQL layer perfectly but never
+exercises the in-memory permission projection in combination with the
+real cookie session + JWT refresh path. Adding a Playwright-based
+cross-user smoke (DR-05 cloud RLS smoke) is the right follow-up.
